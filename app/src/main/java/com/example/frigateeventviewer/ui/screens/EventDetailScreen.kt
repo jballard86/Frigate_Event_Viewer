@@ -48,6 +48,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.example.frigateeventviewer.data.model.Event
 import com.example.frigateeventviewer.ui.util.buildMediaUrl
+import com.example.frigateeventviewer.ui.util.SwipeBackBox
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -100,6 +101,11 @@ fun EventDetailScreen(
         },
         snackbarHost = { androidx.compose.material3.SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
+        SwipeBackBox(
+            enabled = true,
+            onBack = onBack,
+            modifier = Modifier.fillMaxSize()
+        ) {
         if (selectedEvent == null) {
             Box(
                 modifier = Modifier
@@ -120,9 +126,7 @@ fun EventDetailScreen(
                     Button(onClick = onBack) { Text("Back") }
                 }
             }
-            return@Scaffold
-        }
-
+        } else {
         val event = selectedEvent
         val eventPath = "${event.camera}/${event.subdir}"
         val isOperationLoading = operationState is EventDetailOperationState.Loading
@@ -147,6 +151,8 @@ fun EventDetailScreen(
                 onDelete = { viewModel.deleteEvent(eventPath) }
             )
             EventMetadataSection(event = event)
+        }
+        }
         }
     }
 }

@@ -91,13 +91,14 @@ app/src/main/java/com/example/frigateeventviewer/
     │   └── Type.kt
     └── util/
         ├── MediaUrl.kt                # buildMediaUrl(baseUrl, path) for thumbnails/snapshots
-        └── StreamingVideoFetcher.kt  # Coil Fetcher for .mp4 URIs; streams via MediaMetadataRetriever, frame at 2s
+        ├── StreamingVideoFetcher.kt  # Coil Fetcher for .mp4 URIs; streams via MediaMetadataRetriever, frame at 2s
+        └── SwipeBack.kt               # SwipeBackBox: full-width swipe-back on nested screens (rightward swipe from anywhere; vertical scroll preserved)
 ```
 
 - **Screens:** Each feature screen lives in `ui/screens/` with its ViewModel (and factory if it needs `Application`) in the same file or adjacent. Do not put screens in root or in `data/`.
 - **Data:** API client and DTOs under `data/`; preferences under `data/preferences/`. No UI code in `data/`.
 - **Theme:** All theme/typography/color under `ui/theme/`.
-- **Shared UI helpers:** Pure, stateless URL/build helpers under `ui/util/`.
+- **Shared UI helpers:** Pure, stateless URL/build helpers and gesture modifiers under `ui/util/`.
 
 ---
 

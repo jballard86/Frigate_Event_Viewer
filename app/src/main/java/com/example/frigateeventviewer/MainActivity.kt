@@ -54,12 +54,14 @@ class MainActivity : ComponentActivity() {
                     startDestination = "settings"
                 ) {
                     composable("settings") {
+                        val canPop = navController.previousBackStackEntry != null
                         SettingsScreen(
                             onNavigateToDashboard = {
                                 navController.navigate("main_tabs") {
                                     popUpTo("settings") { inclusive = true }
                                 }
-                            }
+                            },
+                            onBack = if (canPop) { { navController.popBackStack() } } else null
                         )
                     }
                     composable("main_tabs") {

@@ -14,6 +14,8 @@ Whenever a new screen or navigation route is added to the app, the AI agent **MU
 
 Apply these rules across all screens to keep the app visually consistent.
 
+- **Screen headers:** The three main tab screens (Dashboard, Events, Daily Review) use a large top-app-bar style title at the top of their main content: `MaterialTheme.typography.headlineLarge`, with **16.dp** horizontal and top padding and **8.dp** bottom spacing before the body content. Main screen headers include a **settings navigation icon on the right** that navigates to the settings route; back from Settings returns to the main tabs.
+- **Nested screens (Settings, Event detail):** Use a **TopAppBar** with title and **navigationIcon** = `IconButton` + `Icons.AutoMirrored.Filled.ArrowBack` for consistent back styling. These screens also use **full-width swipe-back** via **SwipeBackBox** (see `ui/util/SwipeBack.kt`): a rightward swipe from anywhere on the screen triggers back (same feel as swiping between tabs). Vertical scroll is preserved: the gesture is only consumed when horizontal movement exceeds the threshold and dominates vertical movement.
 - **Container margins:** Main screen containers use uniform **16.dp** horizontal padding so content aligns cleanly to the screen edges. Avoid double-padding inner children (e.g. do not add extra horizontal padding inside a Column that already sits in a padded container).
 - **Shapes:** Major UI elements (video players, cards, action buttons) use **12.dp** rounded corners: `RoundedCornerShape(12.dp)`. Do not use the default Compose pill shape for primary action buttons; use the 12.dp shape to match video and cards.
 - **Action buttons:** Rows of action buttons must stay **single-line** at **40.dp** height. Use `Modifier.height(40.dp)` and `Text(..., maxLines = 1)`. When button labels vary in length, use `Modifier.weight(...)` so the middle/longer label has more space (e.g. `weight(1.4f)` for "Mark Reviewed") and side buttons use `weight(1f)` to avoid wrapping.
@@ -25,29 +27,29 @@ Apply these rules across all screens to keep the app visually consistent.
 
 ```mermaid
 flowchart TD
-    AppLaunch[App launch]
-    NavHost[NavHost startDestination]
-    SettingsScreen[SettingsScreen]
-    HasBaseUrl{DataStore has base URL?}
-    MainTabsScreen[MainTabsScreen (pager)]
-    DashboardScreen[DashboardScreen]
-    EventsScreen[EventsScreen]
-    DailyReviewScreen[DailyReviewScreen]
-    EventDetailScreen[EventDetailScreen]
-    BottomBar[Bottom bar visible]
+    appLaunch["App launch"]
+    navHost["NavHost startDestination=settings"]
+    hasBaseUrl{"DataStore has base URL?"}
+    settingsScreen["SettingsScreen"]
+    mainTabs["MainTabsScreen (pager)"]
+    dashboard["DashboardScreen"]
+    events["EventsScreen"]
+    dailyReview["DailyReviewScreen"]
+    eventDetail["EventDetailScreen"]
+    bottomBar["Bottom bar visible"]
 
-    AppLaunch --> NavHost
-    NavHost --> SettingsScreen
-    SettingsScreen --> HasBaseUrl
-    HasBaseUrl -->|Yes| MainTabsScreen
-    HasBaseUrl -->|No| SettingsScreen
-    SettingsScreen -->|Save base URL| MainTabsScreen
-    MainTabsScreen --> BottomBar
-    BottomBar -->|Dashboard tab / swipe| DashboardScreen
-    BottomBar -->|Events tab / swipe| EventsScreen
-    BottomBar -->|Daily Review tab / swipe| DailyReviewScreen
-    EventsScreen -->|Tap event| EventDetailScreen
-    EventDetailScreen -->|Back| EventsScreen
+    appLaunch --> navHost
+    navHost --> settingsScreen
+    settingsScreen --> hasBaseUrl
+    hasBaseUrl -->|Yes| mainTabs
+    hasBaseUrl -->|No| settingsScreen
+    settingsScreen -->|Save base URL| mainTabs
+    mainTabs --> bottomBar
+    bottomBar -->|Dashboard tab or swipe| dashboard
+    bottomBar -->|Events tab or swipe| events
+    bottomBar -->|Daily Review tab or swipe| dailyReview
+    events -->|Tap event| eventDetail
+    eventDetail -->|Back| events
 ```
 
 **Flow summary:**
@@ -66,7 +68,7 @@ flowchart TD
 ### SettingsScreen
 
 - **Route:** `"settings"`
-- **Purpose:** First-run / onboarding. User enters the Frigate Event Buffer server base URL, can test connection (GET `/status`), and saves. After save, app navigates to dashboard and removes settings from back stack.
+- **Purpose:** First-run / onboarding; also reachable from main tabs via the header settings icon. User enters the Frigate Event Buffer server base URL, can test connection (GET `/status`), and saves. After save (when coming from first-run), app navigates to dashboard and removes settings from back stack. When opened from main tabs, a TopAppBar with back icon is shown and back (or full-width swipe) returns to main tabs.
 - **ViewModel:** `SettingsViewModel` (factory: `SettingsViewModelFactory`).
 - **States:**
   - `urlInput: StateFlow<String>` — current text in the URL field.
@@ -116,6 +118,12 @@ flowchart TD
 ---
 
 ## 3. UI components and helpers
+
+### SwipeBackBox
+
+- **Location:** `com.example.frigateeventviewer.ui.util.SwipeBack.kt`
+- **Purpose:** Full-width swipe-right-to-go-back on nested screens (Settings, Event detail). A rightward swipe from anywhere triggers back, like swiping between tabs. Only consumes the gesture when horizontal movement exceeds the threshold and dominates vertical movement, so vertical scroll continues to work.
+- **Used by:** SettingsScreen, EventDetailScreen.
 
 ### buildMediaUrl(baseUrl, path)
 

@@ -60,61 +60,71 @@ fun EventsScreen(
     val state by viewModel.state.collectAsState()
     val baseUrl by viewModel.baseUrl.collectAsState()
 
-    when (val s = state) {
-        is EventsState.Loading -> {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
-            }
-        }
-        is EventsState.Error -> {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = s.message,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.error
-                )
-                Button(
-                    onClick = { viewModel.refresh() },
-                    modifier = Modifier.padding(top = 16.dp)
-                ) {
-                    Text("Retry")
-                }
-            }
-        }
-        is EventsState.Success -> {
-            val events = s.response.events
-            if (events.isEmpty()) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 16.dp)
+    ) {
+        when (val s = state) {
+            is EventsState.Loading -> {
                 Box(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "No unreviewed events",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    CircularProgressIndicator()
                 }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+            }
+            is EventsState.Error -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxSize(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    items(events, key = { it.event_id }) { event ->
-                        EventCard(
-                            event = event,
-                            baseUrl = baseUrl,
-                            onClick = { onEventClick(event) }
+                    Text(
+                        text = s.message,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Button(
+                        onClick = { viewModel.refresh() },
+                        modifier = Modifier.padding(top = 16.dp)
+                    ) {
+                        Text("Retry")
+                    }
+                }
+            }
+            is EventsState.Success -> {
+                val events = s.response.events
+                if (events.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No unreviewed events",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(0.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(events, key = { it.event_id }) { event ->
+                            EventCard(
+                                event = event,
+                                baseUrl = baseUrl,
+                                onClick = { onEventClick(event) }
+                            )
+                        }
                     }
                 }
             }
@@ -202,7 +212,7 @@ private fun EventCard(
                     )
                 }
             }
-            Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = cameraLabel,
                     style = MaterialTheme.typography.titleMedium

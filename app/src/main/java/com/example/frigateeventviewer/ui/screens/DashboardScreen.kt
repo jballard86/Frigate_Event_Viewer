@@ -1,17 +1,23 @@
 package com.example.frigateeventviewer.ui.screens
 
 import android.app.Application
+import android.net.Uri
+import android.text.format.DateUtils
+import android.view.ViewGroup
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -19,14 +25,28 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
+import com.example.frigateeventviewer.data.model.Event
 import com.example.frigateeventviewer.data.model.StatsResponse
+import com.example.frigateeventviewer.ui.util.buildMediaUrl
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,26 +59,40 @@ fun DashboardScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val isRefreshing = state is DashboardState.Loading
+    val recentEvent by viewModel.recentEvent.collectAsState()
+    val baseUrl by viewModel.baseUrl.collectAsState()
 
     PullToRefreshBox(
         isRefreshing = isRefreshing,
         onRefresh = { viewModel.refresh() },
         modifier = Modifier.fillMaxSize()
     ) {
-        when (val s = state) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            when (val s = state) {
             is DashboardState.Loading -> {
                 if (s.previous != null) {
-                    DashboardContent(stats = s.previous, onRetry = { viewModel.refresh() })
+                    DashboardContent(
+                        stats = s.previous,
+                        recentEvent = recentEvent,
+                        baseUrl = baseUrl,
+                        onRetry = { viewModel.refresh() }
+                    )
                 } else {
                     BoxWithProgress()
                 }
             }
             is DashboardState.Success -> {
-                DashboardContent(stats = s.stats, onRetry = { viewModel.refresh() })
+                DashboardContent(
+                    stats = s.stats,
+                    recentEvent = recentEvent,
+                    baseUrl = baseUrl,
+                    onRetry = { viewModel.refresh() }
+                )
             }
             is DashboardState.Error -> {
                 DashboardError(message = s.message, onRetry = { viewModel.refresh() })
             }
+        }
         }
     }
 }
@@ -95,7 +129,7 @@ private fun DashboardError(message: String, onRetry: () -> Unit) {
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.error
         )
-        androidx.compose.material3.        Button(
+        Button(
             onClick = onRetry,
             modifier = Modifier.padding(top = 16.dp)
         ) {
@@ -105,19 +139,23 @@ private fun DashboardError(message: String, onRetry: () -> Unit) {
 }
 
 @Composable
-private fun DashboardContent(stats: StatsResponse, onRetry: () -> Unit) {
+private fun DashboardContent(
+    stats: StatsResponse,
+    recentEvent: Event?,
+    baseUrl: String?,
+    onRetry: () -> Unit
+) {
     val scrollState = rememberScrollState()
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
-            .padding(16.dp),
+            .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(
-            text = "Dashboard",
-            style = MaterialTheme.typography.headlineMedium,
-            modifier = Modifier.padding(bottom = 8.dp)
+        RecentEventCard(
+            event = recentEvent,
+            baseUrl = baseUrl
         )
 
         val events = stats.events
@@ -199,5 +237,141 @@ private fun StatCard(
                 modifier = Modifier.padding(top = 4.dp)
             )
         }
+    }
+}
+
+@Composable
+private fun RecentEventCard(
+    event: Event?,
+    baseUrl: String?
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        if (event == null || !event.has_clip) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "No recent video events",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            return@Card
+        }
+
+        val clipPath = event.hosted_clip?.takeIf { it.isNotBlank() }
+            ?: event.hosted_clips.firstOrNull()?.url
+        val clipUrl = buildMediaUrl(baseUrl, clipPath)
+
+        if (clipUrl == null) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "No recent video events",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            return@Card
+        }
+
+        RecentEventVideoPlayer(clipUrl = clipUrl)
+        RecentEventTextSection(event = event)
+    }
+}
+
+@Composable
+private fun RecentEventVideoPlayer(clipUrl: String) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    val player = remember(clipUrl) {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(Uri.parse(clipUrl)))
+            prepare()
+            repeatMode = Player.REPEAT_MODE_OFF
+            playWhenReady = false
+        }
+    }
+
+    DisposableEffect(lifecycleOwner, player) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> player.pause()
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            player.release()
+        }
+    }
+
+    AndroidView(
+        factory = {
+            PlayerView(context).apply {
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+                setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_ZOOM)
+                controllerShowTimeoutMs = 1000
+                this.player = player
+            }
+        },
+        update = { playerView ->
+            playerView.player = player
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(16f / 9f)
+            .clip(RoundedCornerShape(12.dp)),
+        onRelease = { playerView ->
+            playerView.player = null
+        }
+    )
+}
+
+@Composable
+private fun RecentEventTextSection(event: Event) {
+    val relativeTime = remember(event.timestamp) {
+        val seconds = event.timestamp.toDoubleOrNull()?.toLong()
+            ?: event.timestamp.substringBefore('.').toLongOrNull()
+            ?: 0L
+        val timeMillis = seconds * 1000L
+        DateUtils.getRelativeTimeSpanString(
+            timeMillis,
+            System.currentTimeMillis(),
+            DateUtils.MINUTE_IN_MILLIS
+        ).toString()
+    }
+
+    Column(
+        modifier = Modifier.padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = event.title ?: "Recent Event",
+            style = MaterialTheme.typography.titleMedium
+        )
+        Text(
+            text = "Happened $relativeTime",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

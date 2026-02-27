@@ -1,6 +1,9 @@
 package com.example.frigateeventviewer.ui.screens
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -8,14 +11,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.example.frigateeventviewer.data.model.Event
 import kotlinx.coroutines.launch
@@ -31,9 +39,37 @@ fun MainTabsScreen(
         pageCount = { 3 }
     )
     val coroutineScope = rememberCoroutineScope()
+    val pageTitle = when (pagerState.currentPage) {
+        0 -> "Dashboard"
+        1 -> "Events"
+        2 -> "Daily Review"
+        else -> ""
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        topBar = {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = pageTitle,
+                    style = MaterialTheme.typography.headlineLarge
+                )
+                IconButton(
+                    onClick = { navController.navigate("settings") }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Settings"
+                    )
+                }
+            }
+        },
         bottomBar = {
             NavigationBar {
                 NavigationBarItem(

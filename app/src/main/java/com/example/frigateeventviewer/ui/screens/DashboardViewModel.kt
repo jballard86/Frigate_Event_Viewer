@@ -6,11 +6,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.frigateeventviewer.data.api.ApiClient
+import com.example.frigateeventviewer.data.model.Event
 import com.example.frigateeventviewer.data.model.StatsResponse
 import com.example.frigateeventviewer.data.preferences.SettingsPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
@@ -32,6 +35,18 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _state = MutableStateFlow<DashboardState>(DashboardState.Loading(null))
     val state: StateFlow<DashboardState> = _state.asStateFlow()
+
+    /** Base URL for building media URLs (e.g. recent event clip). */
+    val baseUrl: StateFlow<String?> = preferences.baseUrl
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = null
+        )
+
+    /** Most recent event with a clip, or null when unavailable. */
+    private val _recentEvent = MutableStateFlow<Event?>(null)
+    val recentEvent: StateFlow<Event?> = _recentEvent.asStateFlow()
 
     init {
         loadStats()
@@ -56,6 +71,16 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             try {
                 val service = ApiClient.createService(baseUrl)
                 val stats = service.getStats()
+                val recent = try {
+                    val response = service.getEvents(filter = "unreviewed")
+                    response.events
+                        .asSequence()
+                        .filter { it.has_clip }
+                        .firstOrNull()
+                } catch (_: Exception) {
+                    null
+                }
+                _recentEvent.value = recent
                 _state.value = DashboardState.Success(stats)
             } catch (e: Exception) {
                 _state.value = DashboardState.Error(
