@@ -1,0 +1,48 @@
+### Android / Gradle builds
+/.gradle/
+/build/
+/app/build/
+local.properties
+*.apk
+*.aar
+*.ap_
+*.aab
+
+### IntelliJ / Android Studio
+/.idea/
+*.iml
+*.ipr
+*.iws
+out/
+.DS_Store
+
+### OS / Editor junk
+Thumbs.db
+ehthumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+
+### Android NDK / external builds
+.externalNativeBuild/
+.cxx/
+
+### Signing keys / secrets
+*.keystore
+*.jks
+*.keystore.*
+keystore.properties
+
+### Logs
+*.log
+
+### Captures / profiling
+/captures/
+*.hprof
+
+### Gradle wrapper metadata (keep wrapper JAR and scripts)
+gradle-app.setting
+
+### Cursor / tooling metadata
+.cursor/

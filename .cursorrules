@@ -1,0 +1,30 @@
+# Frigate Mobile - AI Agent Rules
+
+## Architecture & Tech Stack
+
+- Follow `map.md` (and `.cursor/rules`) for structure and when to update docs. In particular:
+  - Use **Jetpack Compose** for all UI (no XML layouts).
+  - Use **Kotlin** and **MVVM** (ViewModels exposing StateFlows).
+  - Use **Retrofit** + **Gson** for networking and **Coil** for image/media loading.
+  - Avoid hardcoded strings for UI text where possible; prefer clear variable naming.
+
+## Mandatory Workflow
+
+- **Formatting:** After modifying or creating Kotlin files, run `./gradlew ktlintFormat` before completing the task.
+- **Testing:** After modifying business logic, ViewModels, or networking, run `./gradlew test` before completing the task.
+- **UI / navigation:** For new screens or routes, follow `.cursor/rules` and `map.md` (including updating `docs/UI_MAP.md` as specified there).
+
+## Android & Compose Gotchas (Pre-Flight Checklist)
+
+Before marking any task as complete, you MUST verify the following:
+
+- **Manifest Permissions & Registration:**
+  - If you add any networking logic, ensure `<uses-permission android:name="android.permission.INTERNET" />` is in AndroidManifest.xml.
+  - If you create a custom Application class, Activity, or Service, you MUST register it in the AndroidManifest.xml immediately.
+
+- **NavHost Imports:**
+  - Whenever you create a new Jetpack Compose screen (...Screen.kt) or a ViewModel, and add it to the NavHost routing (e.g., in MainActivity.kt), you MUST explicitly add the import statements at the top of the routing file. Do not assume the IDE will auto-import them.
+
+- **Explicit Type Declarations in Compose:**
+  - When instantiating ViewModels in Compose, always explicitly state the type: use `viewModel<MyViewModel>()` instead of `viewModel()`.
+  - When collecting state, explicitly type it if there is any ambiguity (e.g., `collectAsState<MyType>()`). Do not rely entirely on Kotlin's type inference inside complex Compose blocks, as it frequently causes "Cannot infer type parameter" compilation errors.
