@@ -48,7 +48,7 @@ dependencies {
     implementation(libs.retrofit)
     implementation(libs.retrofit.converter.gson)
     implementation(libs.okhttp)
-    implementation(libs.okhttp.logging.interceptor)
+    implementation(libs.okhttp.logging)
     implementation(libs.coil.compose)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.navigation.compose)

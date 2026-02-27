@@ -5,6 +5,9 @@ import com.example.frigateeventviewer.data.model.StatsResponse
 import com.example.frigateeventviewer.data.model.StatusResponse
 import com.example.frigateeventviewer.data.model.DailyReviewResponse
 import com.example.frigateeventviewer.data.model.GenerateReportResponse
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
+import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
@@ -34,7 +37,11 @@ interface FrigateApiService {
 
     /** Trigger report generation (POST /api/daily-review/generate). Contract §4.4. */
     @POST("api/daily-review/generate")
-    suspend fun generateDailyReview(): GenerateReportResponse
+    suspend fun generateDailyReview(
+        @Body body: okhttp3.RequestBody = "{}".toRequestBody(
+            "application/json".toMediaType(),
+        ),
+    ): GenerateReportResponse
 
     /** Marks the event as viewed (POST /viewed/&lt;path:event_path&gt;). Contract §1.6. */
     @POST("viewed/{event_path}")

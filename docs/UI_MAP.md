@@ -29,6 +29,7 @@ flowchart TD
     NavHost[NavHost startDestination]
     SettingsScreen[SettingsScreen]
     HasBaseUrl{DataStore has base URL?}
+    MainTabsScreen[MainTabsScreen (pager)]
     DashboardScreen[DashboardScreen]
     EventsScreen[EventsScreen]
     DailyReviewScreen[DailyReviewScreen]
@@ -38,14 +39,13 @@ flowchart TD
     AppLaunch --> NavHost
     NavHost --> SettingsScreen
     SettingsScreen --> HasBaseUrl
-    HasBaseUrl -->|Yes| DashboardScreen
+    HasBaseUrl -->|Yes| MainTabsScreen
     HasBaseUrl -->|No| SettingsScreen
-    DashboardScreen --> BottomBar
-    EventsScreen --> BottomBar
-    DailyReviewScreen --> BottomBar
-    BottomBar -->|Dashboard tab| DashboardScreen
-    BottomBar -->|Events tab| EventsScreen
-    BottomBar -->|Daily Review tab| DailyReviewScreen
+    SettingsScreen -->|Save base URL| MainTabsScreen
+    MainTabsScreen --> BottomBar
+    BottomBar -->|Dashboard tab / swipe| DashboardScreen
+    BottomBar -->|Events tab / swipe| EventsScreen
+    BottomBar -->|Daily Review tab / swipe| DailyReviewScreen
     EventsScreen -->|Tap event| EventDetailScreen
     EventDetailScreen -->|Back| EventsScreen
 ```
@@ -53,11 +53,11 @@ flowchart TD
 **Flow summary:**
 
 - **App launch:** NavHost starts at route `"settings"`.
-- **Launch decision:** A `LaunchedEffect(Unit)` in MainActivity calls `SettingsPreferences.getBaseUrlOnce()`. If non-null, navigates to `"dashboard"` and pops `"settings"` so back does not return to first-run.
-- **First run:** User stays on SettingsScreen until they enter a URL and tap Save (or launch decision already sent them to dashboard).
-- **After Save:** `onNavigateToDashboard` runs → navigate to `"dashboard"`, pop `"settings"` inclusive.
-- **Bottom bar:** Shown only when current route is `"dashboard"`, `"events"`, or `"daily_review"`. Hidden on `"event_detail"`. Tapping Dashboard, Events, or Daily Review uses `launchSingleTop` with save/restore state.
-- **Event detail:** From EventsScreen, tapping an event card sets `SharedEventViewModel.selectedEvent` and navigates to `"event_detail"`. EventDetailScreen shows video, actions (Mark Reviewed, Keep, Delete), and metadata. Back (toolbar or system) clears selection and pops to the previous screen.
+- **Launch decision:** A `LaunchedEffect(Unit)` in MainActivity calls `SettingsPreferences.getBaseUrlOnce()`. If non-null, navigates to `"main_tabs"` (MainTabsScreen) and pops `"settings"` so back does not return to first-run.
+- **First run:** User stays on SettingsScreen until they enter a URL and tap Save (or launch decision already sent them to the tabbed main screen).
+- **After Save:** `onNavigateToDashboard` runs → navigate to `"main_tabs"`, pop `"settings"` inclusive.
+- **Bottom bar + pager:** MainTabsScreen owns a `Scaffold` with a bottom bar and a `HorizontalPager` with three pages: Dashboard, Events, and Daily Review. Tapping Dashboard, Events, or Daily Review animates the pager to the corresponding page; swiping between pages also updates the selected bottom bar item.
+- **Event detail:** From EventsScreen (inside the pager), tapping an event card sets `SharedEventViewModel.selectedEvent` and navigates to `"event_detail"`. EventDetailScreen shows video, actions (Mark Reviewed, Keep, Delete), and metadata. Back (toolbar or system) clears selection and pops to the previous screen.
 
 ---
 
@@ -77,7 +77,7 @@ flowchart TD
 
 ### DashboardScreen
 
-- **Route:** `"dashboard"`
+- **Route:** Hosted as page 0 inside `"main_tabs"` (MainTabsScreen pager)
 - **Purpose:** Shows event stats (today, this week, this month, unreviewed) and storage usage. Pull-to-refresh and retry on error.
 - **ViewModel:** `DashboardViewModel` (factory: `DashboardViewModelFactory`).
 - **States:** `DashboardState` — `Loading(previous?)` | `Success(stats)` | `Error(message, previous?)`.
@@ -87,7 +87,7 @@ flowchart TD
 
 ### EventsScreen
 
-- **Route:** `"events"`
+- **Route:** Hosted as page 1 inside `"main_tabs"` (MainTabsScreen pager)
 - **Purpose:** Lists unreviewed events with thumbnails (snapshot or clip), camera name, timestamp, label, and threat level. Retry on error.
 - **ViewModel:** `EventsViewModel` (factory: `EventsViewModelFactory`).
 - **States:** `EventsState` — `Loading` | `Success(response)` | `Error(message)`. Also exposes `baseUrl: StateFlow<String?>` for building media URLs.
@@ -97,7 +97,7 @@ flowchart TD
 
 ### DailyReviewScreen
 
-- **Route:** `"daily_review"`
+- **Route:** Hosted as page 2 inside `"main_tabs"` (MainTabsScreen pager)
 - **Purpose:** View the current daily review report (Markdown) and trigger report generation. Renders markdown via mikepenz M3; FAB "Generate New Report" calls generate endpoint then refetches. On 404 (no report for today) shows a friendly message and Retry.
 - **ViewModel:** `DailyReviewViewModel` (factory: `DailyReviewViewModelFactory`).
 - **States:** `DailyReviewState` — `Idle` | `Loading` | `Success(markdownText)` | `Error(message)`.

@@ -2,24 +2,12 @@ package com.example.frigateeventviewer
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -38,6 +26,7 @@ import com.example.frigateeventviewer.ui.screens.EventDetailViewModelFactory
 import com.example.frigateeventviewer.ui.screens.EventsScreen
 import com.example.frigateeventviewer.ui.screens.SharedEventViewModel
 import com.example.frigateeventviewer.ui.screens.SettingsScreen
+import com.example.frigateeventviewer.ui.screens.MainTabsScreen
 import com.example.frigateeventviewer.ui.theme.FrigateEventViewerTheme
 
 class MainActivity : ComponentActivity() {
@@ -49,119 +38,56 @@ class MainActivity : ComponentActivity() {
                 val navController = rememberNavController()
                 val sharedEventViewModel: SharedEventViewModel = viewModel<SharedEventViewModel>()
                 val context = LocalContext.current
-                val backStackEntry by navController.currentBackStackEntryAsState()
-                val currentRoute = backStackEntry?.destination?.route
-                val showBottomBar = currentRoute == "dashboard" || currentRoute == "events" || currentRoute == "daily_review"
 
                 LaunchedEffect(Unit) {
                     val preferences = SettingsPreferences(context.applicationContext)
                     val baseUrl = preferences.getBaseUrlOnce()
                     if (baseUrl != null) {
-                        navController.navigate("dashboard") {
+                        navController.navigate("main_tabs") {
                             popUpTo("settings") { inclusive = true }
                         }
                     }
                 }
 
-                Scaffold(
-                    modifier = Modifier.fillMaxSize(),
-                    bottomBar = {
-                        if (showBottomBar) {
-                            NavigationBar {
-                                NavigationBarItem(
-                                    selected = currentRoute == "dashboard",
-                                    onClick = {
-                                        navController.navigate("dashboard") {
-                                            launchSingleTop = true
-                                            popUpTo(navController.graph.startDestinationId) {
-                                                saveState = true
-                                            }
-                                            restoreState = true
-                                        }
-                                    },
-                                    icon = { Icon(Icons.Default.Dashboard, contentDescription = "Dashboard") },
-                                    label = { Text("Dashboard") }
-                                )
-                                NavigationBarItem(
-                                    selected = currentRoute == "events",
-                                    onClick = {
-                                        navController.navigate("events") {
-                                            launchSingleTop = true
-                                            popUpTo(navController.graph.startDestinationId) {
-                                                saveState = true
-                                            }
-                                            restoreState = true
-                                        }
-                                    },
-                                    icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Events") },
-                                    label = { Text("Events") }
-                                )
-                                NavigationBarItem(
-                                    selected = currentRoute == "daily_review",
-                                    onClick = {
-                                        navController.navigate("daily_review") {
-                                            launchSingleTop = true
-                                            popUpTo(navController.graph.startDestinationId) {
-                                                saveState = true
-                                            }
-                                            restoreState = true
-                                        }
-                                    },
-                                    icon = { Icon(Icons.Default.Description, contentDescription = "Daily Review") },
-                                    label = { Text("Daily Review") }
-                                )
+                NavHost(
+                    navController = navController,
+                    startDestination = "settings"
+                ) {
+                    composable("settings") {
+                        SettingsScreen(
+                            onNavigateToDashboard = {
+                                navController.navigate("main_tabs") {
+                                    popUpTo("settings") { inclusive = true }
+                                }
                             }
-                        }
+                        )
                     }
-                ) { innerPadding ->
-                    NavHost(
-                        navController = navController,
-                        startDestination = "settings",
-                        modifier = Modifier.padding(innerPadding)
-                    ) {
-                        composable("settings") {
-                            SettingsScreen(
-                                onNavigateToDashboard = {
-                                    navController.navigate("dashboard") {
-                                        popUpTo("settings") { inclusive = true }
-                                    }
-                                }
-                            )
-                        }
-                        composable("dashboard") {
-                            DashboardScreen()
-                        }
-                        composable("events") {
-                            EventsScreen(
-                                onEventClick = { event: Event ->
-                                    sharedEventViewModel.selectEvent(event)
-                                    navController.navigate("event_detail")
-                                }
-                            )
-                        }
-                        composable("daily_review") {
-                            val dailyReviewViewModel: DailyReviewViewModel =
-                                viewModel<DailyReviewViewModel>(factory = DailyReviewViewModelFactory(application))
-                            DailyReviewScreen(viewModel = dailyReviewViewModel)
-                        }
-                        composable("event_detail") {
-                            val selectedEvent by sharedEventViewModel.selectedEvent.collectAsState()
-                            val eventDetailViewModel: EventDetailViewModel =
-                                viewModel<EventDetailViewModel>(factory = EventDetailViewModelFactory(application))
+                    composable("main_tabs") {
+                        val dailyReviewViewModel: DailyReviewViewModel =
+                            viewModel(factory = DailyReviewViewModelFactory(application))
+                        MainTabsScreen(
+                            navController = navController,
+                            sharedEventViewModel = sharedEventViewModel,
+                            dailyReviewViewModel = dailyReviewViewModel
+                        )
+                    }
+                    composable("event_detail") {
+                        val selectedEvent by sharedEventViewModel.selectedEvent.collectAsState()
+                        val eventDetailViewModel: EventDetailViewModel =
+                            viewModel(factory = EventDetailViewModelFactory(application))
 
-                            BackHandler {
+                        BackHandler {
+                            sharedEventViewModel.selectEvent(null)
+                            navController.popBackStack()
+                        }
+                        EventDetailScreen(
+                            selectedEvent = selectedEvent,
+                            onBack = {
                                 sharedEventViewModel.selectEvent(null)
                                 navController.popBackStack()
-                            }
-                            EventDetailScreen(
-                                selectedEvent = selectedEvent,
-                                onBack = {
-                                    sharedEventViewModel.selectEvent(null)
-                                    navController.popBackStack()
-                                },
-                                viewModel = eventDetailViewModel
-                            )
-                        }
+                            },
+                            viewModel = eventDetailViewModel
+                        )
                     }
                 }
             }

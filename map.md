@@ -25,14 +25,50 @@ Do not add new root-level folders (e.g. `lib/`, `core/`) without explicit permis
 
 ---
 
-## 3. App source structure
+## 3. Libraries and dependencies
+
+**Canonical source:** Dependency declarations and versions are in `gradle/libs.versions.toml`; the app module uses them via `app/build.gradle.kts` (e.g. `libs.androidx.core.ktx`). **When you add, remove, or change any dependency, update both `gradle/libs.versions.toml` and this section** so the map stays accurate.
+
+| Purpose | Library | Version |
+|--------|--------|--------|
+| **Plugins (root)** | Android Gradle Plugin | 9.0.1 |
+| | Kotlin + Compose compiler | 2.0.21 |
+| | ktlint | 12.2.0 |
+| **App runtime** | AndroidX Core KTX | 1.10.1 |
+| | AndroidX Lifecycle Runtime KTX | 2.6.1 |
+| | AndroidX Activity Compose | 1.8.0 |
+| | AndroidX Compose BOM | 2024.09.00 |
+| | AndroidX Compose UI, Material3, Icons Extended | (BOM / 1.7.5) |
+| | AndroidX DataStore Preferences | 1.0.0 |
+| | AndroidX Navigation Compose | 2.7.7 |
+| | AndroidX Lifecycle ViewModel Compose | 2.6.1 |
+| | AndroidX Lifecycle Runtime Compose | 2.6.1 |
+| **Networking** | Retrofit | 2.9.0 |
+| | Retrofit Converter Gson | 2.9.0 |
+| | OkHttp + Logging Interceptor | 4.12.0 |
+| **Media / UI** | Coil Compose | 2.5.0 |
+| | AndroidX Media3 ExoPlayer + UI | 1.2.1 |
+| | Multiplatform Markdown Renderer (Android + M3) | 0.24.0 |
+| **Unit tests** | JUnit | 4.13.2 |
+| | MockK | 1.13.9 |
+| | kotlinx-coroutines-test | 1.7.3 |
+| **Android tests** | AndroidX JUnit | 1.1.5 |
+| | AndroidX Espresso Core | 3.5.1 |
+| | AndroidX Compose UI Test JUnit4 | (BOM) |
+| **Debug** | AndroidX Compose UI Tooling / Test Manifest | (BOM) |
+
+Gson is pulled in transitively by Retrofit (version in catalog: 2.10.1). Compose BOM pins many Compose artifacts; only non-BOM versions are listed explicitly above.
+
+---
+
+## 4. App source structure
 
 Package base: `com.example.frigateeventviewer`.
 
 ```
 app/src/main/java/com/example/frigateeventviewer/
 ├── FrigateEventViewerApplication.kt   # Application + Coil ImageLoaderFactory (StreamingVideoFetcher)
-├── MainActivity.kt                    # Single Activity; Compose; NavHost + bottom bar
+├── MainActivity.kt                    # Single Activity; Compose; NavHost (settings, main_tabs, event_detail)
 ├── data/
 │   ├── api/
 │   │   ├── ApiClient.kt               # Retrofit/OkHttp factory; createService(baseUrl)
@@ -43,9 +79,10 @@ app/src/main/java/com/example/frigateeventviewer/
 └── ui/
     ├── screens/                       # One screen = one *Screen.kt + one *ViewModel.kt (and optional *ViewModelFactory)
     │   ├── DashboardScreen.kt         # Dashboard UI + DashboardViewModel/Factory
-    │   ├── DailyReviewScreen.kt      # Daily review Markdown UI + DailyReviewViewModel/Factory
+    │   ├── DailyReviewScreen.kt       # Daily review Markdown UI + DailyReviewViewModel/Factory
     │   ├── EventDetailScreen.kt       # Event detail: video (Media3), actions, metadata + EventDetailViewModel/Factory
     │   ├── EventsScreen.kt            # Events list UI + EventsViewModel/Factory
+    │   ├── MainTabsScreen.kt          # HorizontalPager + bottom navigation hosting Dashboard/Events/DailyReview
     │   ├── SharedEventViewModel.kt    # Activity-scoped: selectedEvent for event_detail (cleared on back)
     │   └── SettingsScreen.kt          # Server URL input + SettingsViewModel/Factory
     ├── theme/
@@ -64,7 +101,7 @@ app/src/main/java/com/example/frigateeventviewer/
 
 ---
 
-## 4. Data flow
+## 5. Data flow
 
 1. **Base URL**
    - Stored in DataStore via `SettingsPreferences` (`baseUrl` flow, `saveBaseUrl`, `getBaseUrlOnce`).
@@ -91,13 +128,13 @@ app/src/main/java/com/example/frigateeventviewer/
 
 ---
 
-## 5. Navigation
+## 6. Navigation
 
 Navigation (routes, start destination, launch decision, bottom bar) is documented in `docs/UI_MAP.md`. Keep that document updated when adding or changing screens or routes.
 
 ---
 
-## 6. Naming and conventions
+## 7. Naming and conventions
 
 - **ViewModels:** `*ViewModel`; factories `*ViewModelFactory` when the ViewModel needs `Application`.
 - **Screen state:** Sealed classes in the same file as the ViewModel (e.g. `EventsState`, `DashboardState`, `ConnectionTestState`).
@@ -105,14 +142,14 @@ Navigation (routes, start destination, launch decision, bottom bar) is documente
 
 ---
 
-## 7. Tests
+## 8. Tests
 
 - **Unit tests:** `app/src/test/` — keep tests simple: Setup → Execute → Verify; no complex logic in tests.
 - **Instrumented tests:** `app/src/androidTest/` — for UI or integration tests that need the device/emulator.
 
 ---
 
-## 8. Testing & Linting
+## 9. Testing & Linting
 
 - **ktlint:** We use ktlint for Kotlin formatting. Run `./gradlew ktlintCheck` and `./gradlew ktlintFormat`. Running `ktlintFormat` before completing a task that touches Kotlin is part of the mandatory workflow (see root `.cursorrules`).
 - **Unit tests:** We use **JUnit** for unit tests and **MockK** / **kotlinx-coroutines-test** where needed for mocks and coroutines. Run `./gradlew test` before completing work that touches business logic, ViewModels, or networking (see `.cursorrules`).
@@ -120,12 +157,13 @@ Navigation (routes, start destination, launch decision, bottom bar) is documente
 
 ---
 
-## 9. When to update this map
+## 10. When to update this map
 
 Update `map.md` when you:
 
 - Create or delete any source file or directory under `app/src/` or `docs/`.
 - Rename files or packages that affect the structure above.
+- **Add, remove, or change a dependency** — update `gradle/libs.versions.toml` and the **Libraries and dependencies** table in §3 (including versions).
 - Change how base URL is stored, how API is called, or how navigation works.
 - Add a new screen, ViewModel, or data layer component.
 - For UI/screen/navigation changes, also update `docs/UI_MAP.md` per that document's rules.
