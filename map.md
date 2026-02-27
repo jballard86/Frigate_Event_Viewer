@@ -15,6 +15,7 @@
 ## 2. Root layout
 
 - **`map.md`** — This file. Keep it updated when adding/removing/renaming files or changing data flow.
+- **`run-gradle.ps1`** — Optional PowerShell helper: sets JAVA_HOME from a detected JDK (or from a `local.jdk.path` file in the project root) and runs the Gradle wrapper. Use on Windows when JAVA_HOME is not set (e.g. `.\run-gradle.ps1 test`).
 - **`.gitignore`** — Git ignore rules for Android/Gradle builds, IDE metadata, and local environment files.
 - **`docs/`** — Project documentation (e.g. `MOBILE_API_CONTRACT.md`, `UI_MAP.md`). No app source code here.
   - **`UI_MAP.md`** — Compose UI and navigation flow (routes, screens, ViewModels). Keep it updated when adding or changing screens or routes.
@@ -35,13 +36,14 @@ app/src/main/java/com/example/frigateeventviewer/
 ├── data/
 │   ├── api/
 │   │   ├── ApiClient.kt               # Retrofit/OkHttp factory; createService(baseUrl)
-│   │   └── FrigateApiService.kt       # Retrofit: getEvents, getStats, getStatus, markViewed, keepEvent, deleteEvent
-│   ├── model/                         # DTOs for API responses (Event, EventsResponse, StatsResponse, etc.)
+│   │   └── FrigateApiService.kt       # Retrofit: getEvents, getStats, getStatus, getCurrentDailyReview, generateDailyReview, markViewed, keepEvent, deleteEvent
+│   ├── model/                         # DTOs for API responses (Event, EventsResponse, StatsResponse, DailyReviewResponse, GenerateReportResponse, etc.)
 │   └── preferences/
 │       └── SettingsPreferences.kt     # DataStore: baseUrl flow, saveBaseUrl, normalizeBaseUrl
 └── ui/
     ├── screens/                       # One screen = one *Screen.kt + one *ViewModel.kt (and optional *ViewModelFactory)
     │   ├── DashboardScreen.kt         # Dashboard UI + DashboardViewModel/Factory
+    │   ├── DailyReviewScreen.kt      # Daily review Markdown UI + DailyReviewViewModel/Factory
     │   ├── EventDetailScreen.kt       # Event detail: video (Media3), actions, metadata + EventDetailViewModel/Factory
     │   ├── EventsScreen.kt            # Events list UI + EventsViewModel/Factory
     │   ├── SharedEventViewModel.kt    # Activity-scoped: selectedEvent for event_detail (cleared on back)
@@ -72,6 +74,7 @@ app/src/main/java/com/example/frigateeventviewer/
 2. **API calls**
    - ViewModels get base URL from `SettingsPreferences.getBaseUrlOnce()` (or collect `baseUrl` flow).
    - They create the service with `ApiClient.createService(baseUrl)` and call `FrigateApiService` suspend functions.
+   - Daily Review uses the same base URL and API client for `api/daily-review/current` and `api/daily-review/generate`.
    - No API calls from Composables; all from ViewModels.
 
 3. **Shared event selection**
@@ -113,6 +116,7 @@ Navigation (routes, start destination, launch decision, bottom bar) is documente
 
 - **ktlint:** We use ktlint for Kotlin formatting. Run `./gradlew ktlintCheck` and `./gradlew ktlintFormat`. Running `ktlintFormat` before completing a task that touches Kotlin is part of the mandatory workflow (see root `.cursorrules`).
 - **Unit tests:** We use **JUnit** for unit tests and **MockK** / **kotlinx-coroutines-test** where needed for mocks and coroutines. Run `./gradlew test` before completing work that touches business logic, ViewModels, or networking (see `.cursorrules`).
+- **Windows (PowerShell):** If `JAVA_HOME` is not set and `.\gradlew.bat` fails, use the helper script from the project root: `.\run-gradle.ps1 test` and `.\run-gradle.ps1 ktlintFormat`. The script finds a JDK (e.g. Android Studio’s bundled JBR) and runs the Gradle wrapper. Alternatively, set `JAVA_HOME` to your JDK root and run `.\gradlew.bat` as usual.
 
 ---
 

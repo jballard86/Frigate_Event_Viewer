@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -26,7 +27,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.frigateeventviewer.data.preferences.SettingsPreferences
+import com.example.frigateeventviewer.data.model.Event
 import com.example.frigateeventviewer.ui.screens.DashboardScreen
+import com.example.frigateeventviewer.ui.screens.DailyReviewScreen
+import com.example.frigateeventviewer.ui.screens.DailyReviewViewModel
+import com.example.frigateeventviewer.ui.screens.DailyReviewViewModelFactory
 import com.example.frigateeventviewer.ui.screens.EventDetailScreen
 import com.example.frigateeventviewer.ui.screens.EventDetailViewModel
 import com.example.frigateeventviewer.ui.screens.EventDetailViewModelFactory
@@ -42,11 +47,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             FrigateEventViewerTheme {
                 val navController = rememberNavController()
-                val sharedEventViewModel: SharedEventViewModel = viewModel()
+                val sharedEventViewModel: SharedEventViewModel = viewModel<SharedEventViewModel>()
                 val context = LocalContext.current
                 val backStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = backStackEntry?.destination?.route
-                val showBottomBar = currentRoute == "dashboard" || currentRoute == "events"
+                val showBottomBar = currentRoute == "dashboard" || currentRoute == "events" || currentRoute == "daily_review"
 
                 LaunchedEffect(Unit) {
                     val preferences = SettingsPreferences(context.applicationContext)
@@ -91,6 +96,20 @@ class MainActivity : ComponentActivity() {
                                     icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Events") },
                                     label = { Text("Events") }
                                 )
+                                NavigationBarItem(
+                                    selected = currentRoute == "daily_review",
+                                    onClick = {
+                                        navController.navigate("daily_review") {
+                                            launchSingleTop = true
+                                            popUpTo(navController.graph.startDestinationId) {
+                                                saveState = true
+                                            }
+                                            restoreState = true
+                                        }
+                                    },
+                                    icon = { Icon(Icons.Default.Description, contentDescription = "Daily Review") },
+                                    label = { Text("Daily Review") }
+                                )
                             }
                         }
                     }
@@ -114,14 +133,22 @@ class MainActivity : ComponentActivity() {
                         }
                         composable("events") {
                             EventsScreen(
-                                onEventClick = { event ->
+                                onEventClick = { event: Event ->
                                     sharedEventViewModel.selectEvent(event)
                                     navController.navigate("event_detail")
                                 }
                             )
                         }
+                        composable("daily_review") {
+                            val dailyReviewViewModel: DailyReviewViewModel =
+                                viewModel<DailyReviewViewModel>(factory = DailyReviewViewModelFactory(application))
+                            DailyReviewScreen(viewModel = dailyReviewViewModel)
+                        }
                         composable("event_detail") {
                             val selectedEvent by sharedEventViewModel.selectedEvent.collectAsState()
+                            val eventDetailViewModel: EventDetailViewModel =
+                                viewModel<EventDetailViewModel>(factory = EventDetailViewModelFactory(application))
+
                             BackHandler {
                                 sharedEventViewModel.selectEvent(null)
                                 navController.popBackStack()
@@ -132,11 +159,7 @@ class MainActivity : ComponentActivity() {
                                     sharedEventViewModel.selectEvent(null)
                                     navController.popBackStack()
                                 },
-                                viewModel = viewModel<EventDetailViewModel>(
-                                    factory = EventDetailViewModelFactory(
-                                        LocalContext.current.applicationContext as android.app.Application
-                                    )
-                                )
+                                viewModel = eventDetailViewModel
                             )
                         }
                     }

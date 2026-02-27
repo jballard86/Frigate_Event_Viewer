@@ -3,6 +3,8 @@
 /build/
 /app/build/
 local.properties
+local.jdk.path
+run-gradle.ps1
 *.apk
 *.aar
 *.ap_

@@ -10,6 +10,17 @@ Whenever a new screen or navigation route is added to the app, the AI agent **MU
 
 ---
 
+## Design System & UI Guidelines
+
+Apply these rules across all screens to keep the app visually consistent.
+
+- **Container margins:** Main screen containers use uniform **16.dp** horizontal padding so content aligns cleanly to the screen edges. Avoid double-padding inner children (e.g. do not add extra horizontal padding inside a Column that already sits in a padded container).
+- **Shapes:** Major UI elements (video players, cards, action buttons) use **12.dp** rounded corners: `RoundedCornerShape(12.dp)`. Do not use the default Compose pill shape for primary action buttons; use the 12.dp shape to match video and cards.
+- **Action buttons:** Rows of action buttons must stay **single-line** at **40.dp** height. Use `Modifier.height(40.dp)` and `Text(..., maxLines = 1)`. When button labels vary in length, use `Modifier.weight(...)` so the middle/longer label has more space (e.g. `weight(1.4f)` for "Mark Reviewed") and side buttons use `weight(1f)` to avoid wrapping.
+- **Video players:** Use a **16:9** aspect-ratio container (`Modifier.aspectRatio(16f / 9f)`), **RESIZE_MODE_ZOOM** so the frame is filled, and a **1-second (1000ms)** controller timeout (`controllerShowTimeoutMs = 1000`).
+
+---
+
 ## 1. Navigation flowchart
 
 ```mermaid
@@ -20,6 +31,7 @@ flowchart TD
     HasBaseUrl{DataStore has base URL?}
     DashboardScreen[DashboardScreen]
     EventsScreen[EventsScreen]
+    DailyReviewScreen[DailyReviewScreen]
     EventDetailScreen[EventDetailScreen]
     BottomBar[Bottom bar visible]
 
@@ -30,8 +42,10 @@ flowchart TD
     HasBaseUrl -->|No| SettingsScreen
     DashboardScreen --> BottomBar
     EventsScreen --> BottomBar
+    DailyReviewScreen --> BottomBar
     BottomBar -->|Dashboard tab| DashboardScreen
     BottomBar -->|Events tab| EventsScreen
+    BottomBar -->|Daily Review tab| DailyReviewScreen
     EventsScreen -->|Tap event| EventDetailScreen
     EventDetailScreen -->|Back| EventsScreen
 ```
@@ -42,7 +56,7 @@ flowchart TD
 - **Launch decision:** A `LaunchedEffect(Unit)` in MainActivity calls `SettingsPreferences.getBaseUrlOnce()`. If non-null, navigates to `"dashboard"` and pops `"settings"` so back does not return to first-run.
 - **First run:** User stays on SettingsScreen until they enter a URL and tap Save (or launch decision already sent them to dashboard).
 - **After Save:** `onNavigateToDashboard` runs → navigate to `"dashboard"`, pop `"settings"` inclusive.
-- **Bottom bar:** Shown only when current route is `"dashboard"` or `"events"`. Hidden on `"event_detail"`. Tapping Dashboard or Events uses `launchSingleTop` with save/restore state.
+- **Bottom bar:** Shown only when current route is `"dashboard"`, `"events"`, or `"daily_review"`. Hidden on `"event_detail"`. Tapping Dashboard, Events, or Daily Review uses `launchSingleTop` with save/restore state.
 - **Event detail:** From EventsScreen, tapping an event card sets `SharedEventViewModel.selectedEvent` and navigates to `"event_detail"`. EventDetailScreen shows video, actions (Mark Reviewed, Keep, Delete), and metadata. Back (toolbar or system) clears selection and pops to the previous screen.
 
 ---
@@ -78,6 +92,16 @@ flowchart TD
 - **ViewModel:** `EventsViewModel` (factory: `EventsViewModelFactory`).
 - **States:** `EventsState` — `Loading` | `Success(response)` | `Error(message)`. Also exposes `baseUrl: StateFlow<String?>` for building media URLs.
 - **Data source:** `FrigateApiService.getEvents(filter = "unreviewed")`.
+
+---
+
+### DailyReviewScreen
+
+- **Route:** `"daily_review"`
+- **Purpose:** View the current daily review report (Markdown) and trigger report generation. Renders markdown via mikepenz M3; FAB "Generate New Report" calls generate endpoint then refetches. On 404 (no report for today) shows a friendly message and Retry.
+- **ViewModel:** `DailyReviewViewModel` (factory: `DailyReviewViewModelFactory`).
+- **States:** `DailyReviewState` — `Idle` | `Loading` | `Success(markdownText)` | `Error(message)`.
+- **Data source:** `FrigateApiService.getCurrentDailyReview()`, `FrigateApiService.generateDailyReview()`.
 
 ---
 

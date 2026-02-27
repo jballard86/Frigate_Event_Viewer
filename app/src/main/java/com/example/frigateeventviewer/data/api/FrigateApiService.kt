@@ -3,6 +3,8 @@ package com.example.frigateeventviewer.data.api
 import com.example.frigateeventviewer.data.model.EventsResponse
 import com.example.frigateeventviewer.data.model.StatsResponse
 import com.example.frigateeventviewer.data.model.StatusResponse
+import com.example.frigateeventviewer.data.model.DailyReviewResponse
+import com.example.frigateeventviewer.data.model.GenerateReportResponse
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
@@ -25,6 +27,14 @@ interface FrigateApiService {
 
     @GET("status")
     suspend fun getStatus(): StatusResponse
+
+    /** Current daily report (GET /api/daily-review/current). Contract §4.2. Returns 404 if no report for today. */
+    @GET("api/daily-review/current")
+    suspend fun getCurrentDailyReview(): DailyReviewResponse
+
+    /** Trigger report generation (POST /api/daily-review/generate). Contract §4.4. */
+    @POST("api/daily-review/generate")
+    suspend fun generateDailyReview(): GenerateReportResponse
 
     /** Marks the event as viewed (POST /viewed/&lt;path:event_path&gt;). Contract §1.6. */
     @POST("viewed/{event_path}")

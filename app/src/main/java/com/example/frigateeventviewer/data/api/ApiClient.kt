@@ -20,11 +20,21 @@ object ApiClient {
         level = HttpLoggingInterceptor.Level.BODY
     }
 
+    /** Forces a clean, uncompressed connection per request to avoid Keep-Alive/GZIP issues with some Python backends. */
+    private val forceCloseConnectionInterceptor = okhttp3.Interceptor { chain ->
+        val request = chain.request().newBuilder()
+            .header("Connection", "close")
+            .header("Accept-Encoding", "identity")
+            .build()
+        chain.proceed(request)
+    }
+
     private val okHttpClient = OkHttpClient.Builder()
         .addInterceptor(loggingInterceptor)
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .writeTimeout(15, TimeUnit.SECONDS)
+        .addNetworkInterceptor(forceCloseConnectionInterceptor)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(90, TimeUnit.SECONDS)
+        .writeTimeout(90, TimeUnit.SECONDS)
         .build()
 
     private val gson = GsonBuilder().create()
