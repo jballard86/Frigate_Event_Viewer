@@ -35,6 +35,7 @@ ehthumbs.db
 *.jks
 *.keystore.*
 keystore.properties
+google-services.json
 
 ### Logs
 *.log

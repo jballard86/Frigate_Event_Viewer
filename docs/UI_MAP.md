@@ -80,37 +80,40 @@ flowchart TD
 ### DashboardScreen
 
 - **Route:** Hosted as page 0 inside `"main_tabs"` (MainTabsScreen pager)
-- **Purpose:** Shows event stats (today, this week, this month, unreviewed) and storage usage. Pull-to-refresh and retry on error.
+- **Purpose:** Shows event stats (today, this week, this month, unreviewed) and storage usage. Pull-to-refresh and retry on error. Data refreshes when the tab is selected and when the app is opened or brought from background.
 - **ViewModel:** `DashboardViewModel` (factory: `DashboardViewModelFactory`).
 - **States:** `DashboardState` — `Loading(previous?)` | `Success(stats)` | `Error(message, previous?)`.
 - **Data source:** `FrigateApiService.getStats()`.
+- **Refresh triggers:** init, pull-to-refresh, tab selected (current page), app resume (lifecycle `RESUMED` when this tab is visible).
 
 ---
 
 ### EventsScreen
 
 - **Route:** Hosted as page 1 inside `"main_tabs"` (MainTabsScreen pager)
-- **Purpose:** Lists unreviewed events with thumbnails (snapshot or clip), camera name, timestamp, label, and threat level. Retry on error.
-- **ViewModel:** `EventsViewModel` (factory: `EventsViewModelFactory`).
+- **Purpose:** Lists unreviewed events with thumbnails (snapshot or clip), camera name, timestamp, label, and threat level. Pull-to-refresh, retry on error. List refreshes when the user returns from event detail after Mark Reviewed / Keep / Delete, when the tab is selected, and when the app is opened or brought from background.
+- **ViewModel:** `EventsViewModel` (factory: `EventsViewModelFactory`; requires `SharedEventViewModel` to observe `eventsRefreshRequested`).
 - **States:** `EventsState` — `Loading` | `Success(response)` | `Error(message)`. Also exposes `baseUrl: StateFlow<String?>` for building media URLs.
 - **Data source:** `FrigateApiService.getEvents(filter = "unreviewed")`.
+- **Refresh triggers:** init, pull-to-refresh, `SharedEventViewModel.eventsRefreshRequested` (after event-detail actions), tab selected, app resume.
 
 ---
 
 ### DailyReviewScreen
 
 - **Route:** Hosted as page 2 inside `"main_tabs"` (MainTabsScreen pager)
-- **Purpose:** View the current daily review report (Markdown) and trigger report generation. Renders markdown via mikepenz M3; FAB "Generate New Report" calls generate endpoint then refetches. On 404 (no report for today) shows a friendly message and Retry.
-- **ViewModel:** `DailyReviewViewModel` (factory: `DailyReviewViewModelFactory`).
+- **Purpose:** View the current daily review report (Markdown) and trigger report generation. Pull-to-refresh to refetch without regenerating. Renders markdown via mikepenz M3; FAB "Generate New Report" calls generate endpoint then refetches. On 404 (no report for today) shows a friendly message and Retry. Data refreshes when the tab is selected and when the app is opened or brought from background.
+- **ViewModel:** `DailyReviewViewModel` (factory: `DailyReviewViewModelFactory`). Receives viewModel from MainTabsScreen (same instance for the pager).
 - **States:** `DailyReviewState` — `Idle` | `Loading` | `Success(markdownText)` | `Error(message)`.
 - **Data source:** `FrigateApiService.getCurrentDailyReview()`, `FrigateApiService.generateDailyReview()`.
+- **Refresh triggers:** init, pull-to-refresh (`refresh()`), after Generate New Report, tab selected, app resume.
 
 ---
 
 ### EventDetailScreen
 
 - **Route:** `"event_detail"`
-- **Purpose:** Plays the event's .mp4 clip (Media3 ExoPlayer), shows actions (Mark Reviewed, Keep, Delete), and metadata (title, scene, camera, date, threat level). User can mark viewed, keep (move to saved), or delete; on Keep or Delete success the screen pops back (path changes / item removed). Selection comes from `SharedEventViewModel`; cleared on back.
+- **Purpose:** Plays the event's .mp4 clip (Media3 ExoPlayer), shows actions (Mark Reviewed, Keep, Delete), and metadata (title, scene, camera, date, threat level). User can mark viewed, keep (move to saved), or delete; on Keep or Delete success the screen pops back (path changes / item removed). On any of the three actions, `onEventActionCompleted` is invoked so the events list refreshes (via `SharedEventViewModel.requestEventsRefresh()`). Selection comes from `SharedEventViewModel`; cleared on back.
 - **ViewModel:** `EventDetailViewModel` (factory: `EventDetailViewModelFactory`). Also reads `SharedEventViewModel.selectedEvent` (from MainActivity).
 - **States:** `EventDetailOperationState` — `Idle` | `Loading` | `Success(action)` | `Error(message)`. `baseUrl: StateFlow<String?>` for building clip URL.
 - **Data source:** `FrigateApiService.markViewed`, `keepEvent`, `deleteEvent`. Clip URL via `buildMediaUrl(baseUrl, hosted_clip)` or first `hosted_clips[].url`.
@@ -134,7 +137,7 @@ flowchart TD
 ### EventDetailScreen — video and actions
 
 - **Video:** AndroidView wrapping Media3 `PlayerView` and `ExoPlayer`. Clip URL from `buildMediaUrl(baseUrl, event.hosted_clip)` or first `event.hosted_clips[].url`. Player is paused on lifecycle `ON_PAUSE` (so audio does not continue in background) and released in AndroidView `onRelease`.
-- **Actions:** Row of three buttons — Mark Reviewed (primary), Keep (tertiary; disabled if `event.saved`), Delete (error). Success(Delete) or Success(Keep) triggers pop back; Success(Mark Reviewed) shows Snackbar and stays.
+- **Actions:** Row of three buttons — Mark Reviewed (primary), Keep (tertiary; disabled if `event.saved`), Delete (error). Success(Delete) or Success(Keep) calls `onEventActionCompleted()` then pops back; Success(Mark Reviewed) calls `onEventActionCompleted()` (so the events list refreshes in the background), shows Snackbar, and stays.
 
 ### Coil and video thumbnails
 

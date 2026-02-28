@@ -12,18 +12,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.frigateeventviewer.data.preferences.SettingsPreferences
-import com.example.frigateeventviewer.data.model.Event
-import com.example.frigateeventviewer.ui.screens.DashboardScreen
-import com.example.frigateeventviewer.ui.screens.DailyReviewScreen
 import com.example.frigateeventviewer.ui.screens.DailyReviewViewModel
 import com.example.frigateeventviewer.ui.screens.DailyReviewViewModelFactory
 import com.example.frigateeventviewer.ui.screens.EventDetailScreen
 import com.example.frigateeventviewer.ui.screens.EventDetailViewModel
 import com.example.frigateeventviewer.ui.screens.EventDetailViewModelFactory
-import com.example.frigateeventviewer.ui.screens.EventsScreen
 import com.example.frigateeventviewer.ui.screens.SharedEventViewModel
 import com.example.frigateeventviewer.ui.screens.SettingsScreen
 import com.example.frigateeventviewer.ui.screens.MainTabsScreen
@@ -88,6 +83,7 @@ class MainActivity : ComponentActivity() {
                                 sharedEventViewModel.selectEvent(null)
                                 navController.popBackStack()
                             },
+                            onEventActionCompleted = sharedEventViewModel::requestEventsRefresh,
                             viewModel = eventDetailViewModel
                         )
                     }

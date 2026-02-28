@@ -105,6 +105,7 @@ fun MainTabsScreen(
             }
         }
     ) { innerPadding ->
+        val currentPage = pagerState.currentPage
         HorizontalPager(
             state = pagerState,
             modifier = Modifier
@@ -112,15 +113,23 @@ fun MainTabsScreen(
                 .padding(innerPadding)
         ) { page ->
             when (page) {
-                0 -> DashboardScreen()
+                0 -> DashboardScreen(
+                    currentPage = currentPage,
+                    pageIndex = 0
+                )
                 1 -> EventsScreen(
                     onEventClick = { event: Event ->
                         sharedEventViewModel.selectEvent(event)
                         navController.navigate("event_detail")
-                    }
+                    },
+                    currentPage = currentPage,
+                    pageIndex = 1,
+                    sharedEventViewModel = sharedEventViewModel
                 )
                 2 -> DailyReviewScreen(
-                    viewModel = dailyReviewViewModel
+                    viewModel = dailyReviewViewModel,
+                    currentPage = currentPage,
+                    pageIndex = 2
                 )
             }
         }

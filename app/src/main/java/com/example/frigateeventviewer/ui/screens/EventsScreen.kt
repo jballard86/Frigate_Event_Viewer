@@ -29,7 +29,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -38,6 +41,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
@@ -48,82 +54,102 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EventsScreen(
     onEventClick: (Event) -> Unit,
+    currentPage: Int,
+    pageIndex: Int,
+    sharedEventViewModel: SharedEventViewModel,
     viewModel: EventsViewModel = viewModel(
         factory = EventsViewModelFactory(
-            LocalContext.current.applicationContext as Application
+            LocalContext.current.applicationContext as Application,
+            sharedEventViewModel
         )
     )
 ) {
     val state by viewModel.state.collectAsState()
     val baseUrl by viewModel.baseUrl.collectAsState()
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 16.dp)
+    LaunchedEffect(lifecycle, currentPage, pageIndex) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            if (currentPage == pageIndex) {
+                viewModel.refresh()
+            }
+        }
+    }
+
+    PullToRefreshBox(
+        isRefreshing = state is EventsState.Loading,
+        onRefresh = { viewModel.refresh() },
+        modifier = Modifier.fillMaxSize()
     ) {
-        when (val s = state) {
-            is EventsState.Loading -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
-                }
-            }
-            is EventsState.Error -> {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxSize(),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = s.message,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    Button(
-                        onClick = { viewModel.refresh() },
-                        modifier = Modifier.padding(top = 16.dp)
-                    ) {
-                        Text("Retry")
-                    }
-                }
-            }
-            is EventsState.Success -> {
-                val events = s.response.events
-                if (events.isEmpty()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 16.dp)
+        ) {
+            when (val s = state) {
+                is EventsState.Loading -> {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "No unreviewed events",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        CircularProgressIndicator()
                     }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(0.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                }
+                is EventsState.Error -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .fillMaxSize(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        items(events, key = { it.event_id }) { event ->
-                            EventCard(
-                                event = event,
-                                baseUrl = baseUrl,
-                                onClick = { onEventClick(event) }
+                        Text(
+                            text = s.message,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Button(
+                            onClick = { viewModel.refresh() },
+                            modifier = Modifier.padding(top = 16.dp)
+                        ) {
+                            Text("Retry")
+                        }
+                    }
+                }
+                is EventsState.Success -> {
+                    val events = s.response.events
+                    if (events.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "No unreviewed events",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(0.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(events, key = { it.event_id }) { event ->
+                                EventCard(
+                                    event = event,
+                                    baseUrl = baseUrl,
+                                    onClick = { onEventClick(event) }
+                                )
+                            }
                         }
                     }
                 }

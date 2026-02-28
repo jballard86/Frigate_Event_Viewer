@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -38,6 +39,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -51,6 +53,8 @@ import com.example.frigateeventviewer.ui.util.buildMediaUrl
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
+    currentPage: Int,
+    pageIndex: Int,
     viewModel: DashboardViewModel = viewModel(
         factory = DashboardViewModelFactory(
             LocalContext.current.applicationContext as Application
@@ -61,6 +65,15 @@ fun DashboardScreen(
     val isRefreshing = state is DashboardState.Loading
     val recentEvent by viewModel.recentEvent.collectAsState()
     val baseUrl by viewModel.baseUrl.collectAsState()
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+
+    LaunchedEffect(lifecycle, currentPage, pageIndex) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            if (currentPage == pageIndex) {
+                viewModel.refresh()
+            }
+        }
+    }
 
     PullToRefreshBox(
         isRefreshing = isRefreshing,

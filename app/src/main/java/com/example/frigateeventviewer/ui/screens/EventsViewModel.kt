@@ -27,8 +27,12 @@ sealed class EventsState {
 /**
  * ViewModel for the Events screen.
  * Loads unreviewed events; exposes baseUrl for thumbnail URL building and Loading / Success / Error.
+ * Subscribes to [SharedEventViewModel.eventsRefreshRequested] to refresh when event-detail actions complete.
  */
-class EventsViewModel(application: Application) : AndroidViewModel(application) {
+class EventsViewModel(
+    application: Application,
+    sharedEventViewModel: SharedEventViewModel
+) : AndroidViewModel(application) {
 
     private val preferences = SettingsPreferences(application)
 
@@ -45,6 +49,11 @@ class EventsViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         loadEvents()
+        viewModelScope.launch {
+            sharedEventViewModel.eventsRefreshRequested.collect {
+                loadEvents()
+            }
+        }
     }
 
     /**
@@ -76,13 +85,16 @@ class EventsViewModel(application: Application) : AndroidViewModel(application) 
 }
 
 /**
- * Factory for [EventsViewModel] so it receives [Application].
+ * Factory for [EventsViewModel] so it receives [Application] and [SharedEventViewModel].
  */
-class EventsViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
+class EventsViewModelFactory(
+    private val application: Application,
+    private val sharedEventViewModel: SharedEventViewModel
+) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(EventsViewModel::class.java)) {
-            return EventsViewModel(application) as T
+            return EventsViewModel(application, sharedEventViewModel) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

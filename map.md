@@ -83,7 +83,7 @@ app/src/main/java/com/example/frigateeventviewer/
     │   ├── EventDetailScreen.kt       # Event detail: video (Media3), actions, metadata + EventDetailViewModel/Factory
     │   ├── EventsScreen.kt            # Events list UI + EventsViewModel/Factory
     │   ├── MainTabsScreen.kt          # HorizontalPager + bottom navigation hosting Dashboard/Events/DailyReview
-    │   ├── SharedEventViewModel.kt    # Activity-scoped: selectedEvent for event_detail (cleared on back)
+    │   ├── SharedEventViewModel.kt    # Activity-scoped: selectedEvent for event_detail; eventsRefreshRequested to trigger events list refresh after detail actions
     │   └── SettingsScreen.kt          # Server URL input + SettingsViewModel/Factory
     ├── theme/
     │   ├── Theme.kt
@@ -119,6 +119,7 @@ app/src/main/java/com/example/frigateeventviewer/
    - The event selected for the detail screen is held in `SharedEventViewModel.selectedEvent` (activity-scoped).
    - EventsScreen sets it via `selectEvent(event)` when the user taps an event card, then navigates to `"event_detail"`.
    - When the user leaves the detail screen (back), MainActivity calls `selectEvent(null)` so the app does not hold the event in memory longer than needed.
+   - When the user completes an action on EventDetailScreen (Mark Reviewed, Keep, or Delete), MainActivity passes `onEventActionCompleted` which calls `SharedEventViewModel.requestEventsRefresh()`. EventsViewModel subscribes to `eventsRefreshRequested` and refetches the events list so the UI stays in sync.
 
 4. **Media URLs**
    - API returns paths (e.g. `hosted_snapshot`). Full URL = `{baseUrl}{path}`.

@@ -58,6 +58,7 @@ import java.time.format.DateTimeFormatter
 fun EventDetailScreen(
     selectedEvent: Event?,
     onBack: () -> Unit,
+    onEventActionCompleted: () -> Unit = {},
     viewModel: EventDetailViewModel = viewModel<EventDetailViewModel>(
         factory = EventDetailViewModelFactory(
             LocalContext.current.applicationContext as android.app.Application
@@ -71,8 +72,12 @@ fun EventDetailScreen(
     LaunchedEffect(operationState) {
         when (val state = operationState) {
             is EventDetailOperationState.Success -> when (state.action) {
-                EventDetailAction.DELETE, EventDetailAction.KEEP -> onBack()
+                EventDetailAction.DELETE, EventDetailAction.KEEP -> {
+                    onEventActionCompleted()
+                    onBack()
+                }
                 EventDetailAction.MARK_VIEWED -> {
+                    onEventActionCompleted()
                     snackbarHostState.showSnackbar("Marked as reviewed")
                     viewModel.resetOperationState()
                 }
