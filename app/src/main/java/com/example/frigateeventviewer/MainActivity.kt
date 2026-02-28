@@ -14,6 +14,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.frigateeventviewer.data.preferences.SettingsPreferences
+import com.example.frigateeventviewer.data.push.FcmTokenManager
 import com.example.frigateeventviewer.ui.screens.DailyReviewViewModel
 import com.example.frigateeventviewer.ui.screens.DailyReviewViewModelFactory
 import com.example.frigateeventviewer.ui.screens.EventDetailScreen
@@ -42,6 +43,7 @@ class MainActivity : ComponentActivity() {
                             popUpTo("settings") { inclusive = true }
                         }
                     }
+                    FcmTokenManager(context.applicationContext).registerIfPossible()
                 }
 
                 NavHost(

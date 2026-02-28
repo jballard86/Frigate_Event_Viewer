@@ -5,6 +5,8 @@ import com.example.frigateeventviewer.data.model.StatsResponse
 import com.example.frigateeventviewer.data.model.StatusResponse
 import com.example.frigateeventviewer.data.model.DailyReviewResponse
 import com.example.frigateeventviewer.data.model.GenerateReportResponse
+import com.example.frigateeventviewer.data.model.RegisterDeviceRequest
+import com.example.frigateeventviewer.data.model.RegisterDeviceResponse
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import retrofit2.http.Body
@@ -60,4 +62,8 @@ interface FrigateApiService {
     suspend fun deleteEvent(
         @Path("event_path", encoded = true) eventPath: String
     )
+
+    /** Register FCM device token (POST /api/mobile/register). Contract §6.1. */
+    @POST("api/mobile/register")
+    suspend fun registerDevice(@Body body: RegisterDeviceRequest): RegisterDeviceResponse
 }

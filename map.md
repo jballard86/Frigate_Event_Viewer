@@ -46,6 +46,8 @@ Do not add new root-level folders (e.g. `lib/`, `core/`) without explicit permis
 | **Networking** | Retrofit | 2.9.0 |
 | | Retrofit Converter Gson | 2.9.0 |
 | | OkHttp + Logging Interceptor | 4.12.0 |
+| **Push** | Firebase BOM | 33.0.0 |
+| | firebase-messaging | (BOM) |
 | **Media / UI** | Coil Compose | 2.5.0 |
 | | AndroidX Media3 ExoPlayer + UI | 1.2.1 |
 | | Multiplatform Markdown Renderer (Android + M3) | 0.24.0 |
@@ -57,7 +59,7 @@ Do not add new root-level folders (e.g. `lib/`, `core/`) without explicit permis
 | | AndroidX Compose UI Test JUnit4 | (BOM) |
 | **Debug** | AndroidX Compose UI Tooling / Test Manifest | (BOM) |
 
-Gson is pulled in transitively by Retrofit (version in catalog: 2.10.1). Compose BOM pins many Compose artifacts; only non-BOM versions are listed explicitly above.
+Gson is pulled in transitively by Retrofit (version in catalog: 2.10.1). Compose BOM pins many Compose artifacts; only non-BOM versions are listed explicitly above. The Google Services plugin is applied in the app module; the app requires `app/google-services.json` from the Firebase Console for FCM to work.
 
 ---
 
@@ -67,15 +69,19 @@ Package base: `com.example.frigateeventviewer`.
 
 ```
 app/src/main/java/com/example/frigateeventviewer/
-├── FrigateEventViewerApplication.kt   # Application + Coil ImageLoaderFactory (StreamingVideoFetcher)
+├── FrigateEventViewerApplication.kt   # Application: Coil ImageLoaderFactory (StreamingVideoFetcher); "Security Alerts" notification channel (PushConstants.CHANNEL_ID_SECURITY_ALERTS)
 ├── MainActivity.kt                    # Single Activity; Compose; NavHost (settings, main_tabs, event_detail)
 ├── data/
 │   ├── api/
 │   │   ├── ApiClient.kt               # Retrofit/OkHttp factory; createService(baseUrl)
-│   │   └── FrigateApiService.kt       # Retrofit: getEvents, getStats, getStatus, getCurrentDailyReview, generateDailyReview, markViewed, keepEvent, deleteEvent
-│   ├── model/                         # DTOs for API responses (Event, EventsResponse, StatsResponse, DailyReviewResponse, GenerateReportResponse, etc.)
-│   └── preferences/
-│       └── SettingsPreferences.kt     # DataStore: baseUrl flow, saveBaseUrl, normalizeBaseUrl
+│   │   └── FrigateApiService.kt       # Retrofit: getEvents, getStats, getStatus, getCurrentDailyReview, generateDailyReview, markViewed, keepEvent, deleteEvent, registerDevice
+│   ├── model/                         # DTOs for API responses (Event, EventsResponse, StatsResponse, DailyReviewResponse, GenerateReportResponse, RegisterDeviceRequest/Response, etc.)
+│   ├── preferences/
+│   │   └── SettingsPreferences.kt     # DataStore: baseUrl flow, saveBaseUrl, normalizeBaseUrl
+│   └── push/
+│       ├── PushConstants.kt           # CHANNEL_ID_SECURITY_ALERTS; used by Application and FrigateFirebaseMessagingService
+│       ├── FcmTokenManager.kt         # FCM token fetch + POST /api/mobile/register via SettingsPreferences baseUrl; registerIfPossible(), registerToken(token) for onNewToken
+│       └── FrigateFirebaseMessagingService.kt   # FirebaseMessagingService: onNewToken → registerToken; onMessageReceived no-op (use PushConstants for future notifications)
 └── ui/
     ├── screens/                       # One screen = one *Screen.kt + one *ViewModel.kt (and optional *ViewModelFactory)
     │   ├── DashboardScreen.kt         # Dashboard UI + DashboardViewModel/Factory
@@ -128,6 +134,12 @@ app/src/main/java/com/example/frigateeventviewer/
 5. **Coil**
    - `FrigateEventViewerApplication` implements `ImageLoaderFactory` and registers `StreamingVideoFetcher.Factory()` so .mp4 thumbnails are fetched by streaming (MediaMetadataRetriever, frame at 2s) without full-file download. Use the default Coil `ImageLoader`; do not create ad-hoc loaders that bypass the fetcher.
 
+6. **FCM registration**
+   - On app start (MainActivity `LaunchedEffect`) and after first-run Save (SettingsViewModel.saveBaseUrl), `FcmTokenManager` fetches the FCM token and, if a base URL is set in SettingsPreferences, POSTs it to `POST /api/mobile/register`. On token rotation, `FrigateFirebaseMessagingService.onNewToken` calls `FcmTokenManager.registerToken(newToken)`. Server URL is never hardcoded.
+
+7. **AndroidManifest**
+   - `android:usesCleartextTraffic="true"` on `<application>` for local HTTP backends. FCM service is declared with `com.google.firebase.MESSAGING_EVENT` so FCM can deliver messages and invoke `onNewToken`.
+
 ---
 
 ## 6. Navigation
@@ -155,7 +167,7 @@ Navigation (routes, start destination, launch decision, bottom bar) is documente
 
 - **ktlint:** We use ktlint for Kotlin formatting. Run `./gradlew ktlintCheck` and `./gradlew ktlintFormat`. Running `ktlintFormat` before completing a task that touches Kotlin is part of the mandatory workflow (see root `.cursorrules`).
 - **Unit tests:** We use **JUnit** for unit tests and **MockK** / **kotlinx-coroutines-test** where needed for mocks and coroutines. Run `./gradlew test` before completing work that touches business logic, ViewModels, or networking (see `.cursorrules`).
-- **Windows (PowerShell):** If `JAVA_HOME` is not set and `.\gradlew.bat` fails, use the helper script from the project root: `.\run-gradle.ps1 test` and `.\run-gradle.ps1 ktlintFormat`. The script finds a JDK (e.g. Android Studio’s bundled JBR) and runs the Gradle wrapper. Alternatively, set `JAVA_HOME` to your JDK root and run `.\gradlew.bat` as usual.
+
 
 ---
 

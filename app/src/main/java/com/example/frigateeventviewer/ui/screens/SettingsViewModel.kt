@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.frigateeventviewer.data.api.ApiClient
 import com.example.frigateeventviewer.data.preferences.SettingsPreferences
+import com.example.frigateeventviewer.data.push.FcmTokenManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -68,6 +69,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             val normalized = preferences.saveBaseUrl(_urlInput.value)
             if (normalized != null) {
                 _urlInput.update { normalized.trimEnd('/') }
+                FcmTokenManager(application).registerIfPossible()
                 onSaved()
             }
         }
