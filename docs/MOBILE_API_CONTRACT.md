@@ -875,4 +875,26 @@ Idempotent: returns success even if the camera was not snoozed.
 
 ---
 
+## 9. FCM data payload
+
+The backend sends **data-only** FCM messages to the registered device. The Android app reads `RemoteMessage.getData()` as `Map<String, String>`. The following keys define the contract between server and mobile; both sides must stay in sync.
+
+| Key | Type | Description |
+|-----|------|--------------|
+| `ce_id` | string | Consolidated event ID. Used for deterministic notification slotting; if missing, the app generates a fallback ID so the alert is not lost. |
+| `phase` | string | One of: `NEW`, `SNAPSHOT_READY`, `CLIP_READY`, `DISCARDED`. Drives which notification (or cancel) is shown. |
+| `clear_notification` | string | `"true"` or `"false"`. If true (or phase is `DISCARDED`), the app cancels the notification for this `ce_id`. |
+| `threat_level` | string | Integer as string: `"0"`, `"1"`, `"2"` (0=normal, 1=suspicious, 2=critical). |
+| `camera` | string | Camera name (e.g. for subtitle or "Snapshot: camera"). |
+| `live_frame_proxy` | string | Path for live frame (e.g. `/api/cameras/{camera}/latest.jpg`). Used in phase `NEW`. |
+| `hosted_snapshot` | string | Path to cropped snapshot (e.g. `/files/events/ce_id/camera/snapshot.jpg`). Used in `SNAPSHOT_READY`. |
+| `notification_gif` or `notification.gif` | string | Path to teaser GIF/image. Used in `CLIP_READY`; app uses first frame as large icon. |
+| `title` | string | AI-generated title. Used in `CLIP_READY`. |
+| `description` | string | AI-generated description. Used in `CLIP_READY`. |
+| `hosted_clip` | string | Path to clip for "Play" action. Used in `CLIP_READY`; app passes to MainActivity via intent extra. |
+
+Full media URLs are built on the client as `{baseUrl}{path}` (see §2.4); the app uses `buildMediaUrl(baseUrl, path)` from `ui.util`.
+
+---
+
 *End of contract.*

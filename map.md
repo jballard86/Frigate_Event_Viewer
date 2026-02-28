@@ -79,9 +79,10 @@ app/src/main/java/com/example/frigateeventviewer/
 │   ├── preferences/
 │   │   └── SettingsPreferences.kt     # DataStore: baseUrl flow, saveBaseUrl, normalizeBaseUrl
 │   └── push/
-│       ├── PushConstants.kt           # CHANNEL_ID_SECURITY_ALERTS; used by Application and FrigateFirebaseMessagingService
+│       ├── PushConstants.kt           # CHANNEL_ID_SECURITY_ALERTS; notificationId(ce_id) for deterministic slotting; used by Application and FrigateFirebaseMessagingService
+│       ├── EventNotification.kt       # FCM payload model (NotificationPhase, EventNotification) and EventNotification.from(data) parser
 │       ├── FcmTokenManager.kt         # FCM token fetch + POST /api/mobile/register via SettingsPreferences baseUrl; registerIfPossible(), registerToken(token) for onNewToken
-│       └── FrigateFirebaseMessagingService.kt   # FirebaseMessagingService: onNewToken → registerToken; onMessageReceived no-op (use PushConstants for future notifications)
+│       └── FrigateFirebaseMessagingService.kt   # FirebaseMessagingService: onNewToken → registerToken; onMessageReceived parses EventNotification, cancel (clear/DISCARDED), handleNew (large icon), handleSnapshotReady (BigPictureStyle), handleClipReady (Play action + teaser)
 └── ui/
     ├── screens/                       # One screen = one *Screen.kt + one *ViewModel.kt (and optional *ViewModelFactory)
     │   ├── DashboardScreen.kt         # Dashboard UI + DashboardViewModel/Factory
@@ -137,7 +138,10 @@ app/src/main/java/com/example/frigateeventviewer/
 6. **FCM registration**
    - On app start (MainActivity `LaunchedEffect`) and after first-run Save (SettingsViewModel.saveBaseUrl), `FcmTokenManager` fetches the FCM token and, if a base URL is set in SettingsPreferences, POSTs it to `POST /api/mobile/register`. On token rotation, `FrigateFirebaseMessagingService.onNewToken` calls `FcmTokenManager.registerToken(newToken)`. Server URL is never hardcoded.
 
-7. **AndroidManifest**
+7. **FCM phase-aware notifications**
+   - `FrigateFirebaseMessagingService.onMessageReceived` parses FCM data into `EventNotification`; if base URL is missing, no notification is posted. Notifications use `notificationId(ce_id)` so the same event updates in place. NEW: live frame as large icon; SNAPSHOT_READY: BigPictureStyle; CLIP_READY: AI title/description, Play action, teaser first frame. Media URLs built with `buildMediaUrl(baseUrl, path)`; all image loads use Coil with `allowHardware(false)` and run on the service's IO scope.
+
+8. **AndroidManifest**
    - `android:usesCleartextTraffic="true"` on `<application>` for local HTTP backends. FCM service is declared with `com.google.firebase.MESSAGING_EVENT` so FCM can deliver messages and invoke `onNewToken`.
 
 ---
