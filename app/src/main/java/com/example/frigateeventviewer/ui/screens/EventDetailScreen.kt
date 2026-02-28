@@ -61,7 +61,7 @@ import java.time.format.DateTimeFormatter
 fun EventDetailScreen(
     selectedEvent: Event?,
     onBack: () -> Unit,
-    onEventActionCompleted: () -> Unit = {},
+    onEventActionCompleted: (markedReviewedEventId: String?, deletedEventId: String?) -> Unit = { _, _ -> },
     viewModel: EventDetailViewModel = viewModel<EventDetailViewModel>(
         factory = EventDetailViewModelFactory(
             LocalContext.current.applicationContext as android.app.Application
@@ -73,20 +73,24 @@ fun EventDetailScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(operationState) {
-        when (val state = operationState) {
-            is EventDetailOperationState.Success -> when (state.action) {
-                EventDetailAction.DELETE, EventDetailAction.KEEP -> {
-                    onEventActionCompleted()
+        when (val opState = operationState) {
+            is EventDetailOperationState.Success -> when (opState.action) {
+                EventDetailAction.DELETE -> {
+                    onEventActionCompleted(null, selectedEvent?.event_id)
+                    onBack()
+                }
+                EventDetailAction.KEEP -> {
+                    onEventActionCompleted(null, null)
                     onBack()
                 }
                 EventDetailAction.MARK_VIEWED -> {
-                    onEventActionCompleted()
+                    onEventActionCompleted(selectedEvent?.event_id, null)
                     snackbarHostState.showSnackbar("Marked as reviewed")
                     viewModel.resetOperationState()
                 }
             }
             is EventDetailOperationState.Error -> {
-                snackbarHostState.showSnackbar(state.message)
+                snackbarHostState.showSnackbar(opState.message)
                 viewModel.resetOperationState()
             }
             else -> {}

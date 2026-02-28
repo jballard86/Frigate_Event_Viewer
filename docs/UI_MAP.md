@@ -21,6 +21,8 @@ Apply these rules across all screens to keep the app visually consistent.
 - **Action buttons:** Rows of action buttons must stay **single-line** at **40.dp** height. Use `Modifier.height(40.dp)` and `Text(..., maxLines = 1)`. When button labels vary in length, use `Modifier.weight(...)` so the middle/longer label has more space (e.g. `weight(1.4f)` for "Mark Reviewed") and side buttons use `weight(1f)` to avoid wrapping.
 - **Video players:** Use a **16:9** aspect-ratio container (`Modifier.aspectRatio(16f / 9f)`), **RESIZE_MODE_ZOOM** so the frame is filled, and a **1-second (1000ms)** controller timeout (`controllerShowTimeoutMs = 1000`).
 - **Push notifications:** Security-alert notification content follows the same title/body hierarchy as in-app UI: concise title (e.g. "Motion Detected", "Snapshot ready", or AI title) and body text. The notification shade uses `NotificationCompat` setContentTitle/setContentText (and BigPictureStyle where applicable); no Compose typography in the shade. See `FrigateFirebaseMessagingService` and `map.md` §5 (FCM phase-aware notifications).
+- **Stat cards / metric cards:** Dashboard-style cards that show a label and a numeric (or short) value must keep spacing consistent. Use a content **Column** with **Modifier.fillMaxWidth()** so the label and value are centered in the full card width (not left-aligned). Put the label on top (e.g. `labelMedium`), then a fixed gap (e.g. **4.dp**), then a **fixed-height value region** (e.g. `Box` with `Modifier.fillMaxWidth()` and `Modifier.heightIn(min = 32.dp)`) with the value **centered** (vertical and horizontal) so one-digit and multi-digit values align consistently. Reference: Dashboard `StatCard` in `DashboardScreen.kt`.
+- **Full-width filter/toggle buttons:** Used for mode toggles (e.g. Events tab Reviewed/Unreviewed). Place within the screen’s **16.dp** horizontal padding; **Modifier.fillMaxWidth().height(40.dp)**; **RoundedCornerShape(12.dp)**; single-line label. Use `OutlinedButton` or secondary-style `Button`. Example: EventsScreen toggle "View Reviewed Events" / "View Unreviewed Events".
 
 ---
 
@@ -104,11 +106,11 @@ flowchart TD
 ### EventsScreen
 
 - **Route:** Hosted as page 1 inside `"main_tabs"` (MainTabsScreen pager)
-- **Purpose:** Lists unreviewed events with thumbnails (snapshot or clip), camera name, timestamp, label, and threat level. Pull-to-refresh, retry on error. List refreshes when the user returns from event detail after Mark Reviewed / Keep / Delete, when the tab is selected, and when the app is opened or brought from background.
-- **ViewModel:** `EventsViewModel` (factory: `EventsViewModelFactory`; requires `SharedEventViewModel` to observe `eventsRefreshRequested`).
-- **States:** `EventsState` — `Loading` | `Success(response)` | `Error(message)`. Also exposes `baseUrl: StateFlow<String?>` for building media URLs.
-- **Data source:** `FrigateApiService.getEvents(filter = "unreviewed")`.
-- **Refresh triggers:** init, pull-to-refresh, `SharedEventViewModel.eventsRefreshRequested` (after event-detail actions), tab selected, app resume.
+- **Purpose:** Lists events in one of two modes: **Unreviewed** or **Reviewed**. A full-width toggle button under the page title switches mode; the page title shows "Unreviewed Events" or "Reviewed Events" (from EventsViewModel, shown in MainTabsScreen topBar when Events tab is selected). Events show thumbnails (snapshot or clip), camera name, timestamp, label, and threat level. Reviewed/unreviewed status is determined primarily by an in-memory local set (`locallyMarkedReviewedEventIds`); Mark Reviewed adds the id so the event disappears from the unreviewed list immediately; Delete removes the id. A watchdog prunes the local set via GET /events?filter=all so storage stays bounded. Pull-to-refresh, retry on error. List refreshes when the user returns from event detail after Mark Reviewed / Keep / Delete, when the tab is selected, and when the app is opened or brought from background.
+- **ViewModel:** `EventsViewModel` (factory: `EventsViewModelFactory`; requires `SharedEventViewModel` to observe `eventsRefreshRequested`). EventsViewModel is created in MainActivity’s `main_tabs` composable and passed into MainTabsScreen and EventsScreen.
+- **States:** `EventsState` — `Loading(previous?)` | `Success(response)` | `Error(message, previous?)`. Also exposes `baseUrl`, `eventsPageTitle`, `filterToggleButtonLabel`, `displayedEvents` (filtered list; for Unreviewed, server list minus locally marked reviewed).
+- **Data source:** `FrigateApiService.getEvents(filter = "reviewed" | "unreviewed")` depending on current mode; unreviewed list is server response filtered by local set. Watchdog uses GET /events?filter=all to prune local set.
+- **Refresh triggers:** init, pull-to-refresh, `SharedEventViewModel.eventsRefreshRequested` (payload may include `markedReviewedEventId` or `deletedEventId`), tab selected, app resume.
 
 ---
 
@@ -126,7 +128,7 @@ flowchart TD
 ### EventDetailScreen
 
 - **Route:** `"event_detail"`
-- **Purpose:** Plays the event's .mp4 clip (Media3 ExoPlayer), or shows the same snapshot as the events tab (hosted_snapshot / hosted_clip) as a placeholder when no clip is available yet. Shows actions (Mark Reviewed, Keep, Delete), and metadata (title, scene, camera, date, threat level). User can mark viewed, keep (move to saved), or delete; on Keep or Delete success the screen pops back (path changes / item removed). On any of the three actions, `onEventActionCompleted` is invoked so the events list refreshes (via `SharedEventViewModel.requestEventsRefresh()`). Selection comes from `SharedEventViewModel`; cleared on back.
+- **Purpose:** Plays the event's .mp4 clip (Media3 ExoPlayer), or shows the same snapshot as the events tab (hosted_snapshot / hosted_clip) as a placeholder when no clip is available yet. Shows actions (Mark Reviewed, Keep, Delete), and metadata (title, scene, camera, date, threat level). User can mark viewed, keep (move to saved), or delete; on Keep or Delete success the screen pops back (path changes / item removed). On any action, `onEventActionCompleted(markedReviewedEventId, deletedEventId)` is invoked: Mark Reviewed passes the event id as markedReviewedEventId; Delete passes the event id as deletedEventId; Keep passes (null, null). EventsViewModel uses these to update local designation and refresh the list. Selection comes from `SharedEventViewModel`; cleared on back.
 - **ViewModel:** `EventDetailViewModel` (factory: `EventDetailViewModelFactory`). Also reads `SharedEventViewModel.selectedEvent` (from MainActivity).
 - **States:** `EventDetailOperationState` — `Idle` | `Loading` | `Success(action)` | `Error(message)`. `baseUrl: StateFlow<String?>` for building clip and placeholder URLs.
 - **Data source:** `FrigateApiService.markViewed`, `keepEvent`, `deleteEvent`. Clip URL via `buildMediaUrl(baseUrl, hosted_clip)` or first `hosted_clips[].url`; when no clip, placeholder image from `buildMediaUrl(baseUrl, hosted_snapshot)` or `hosted_clip` (same as events tab).
@@ -169,7 +171,7 @@ flowchart TD
 ### EventDetailScreen — video and actions
 
 - **Video / placeholder:** When a clip is available, AndroidView wraps Media3 `PlayerView` and `ExoPlayer`; clip URL from `buildMediaUrl(baseUrl, event.hosted_clip)` or first `event.hosted_clips[].url`. When no clip is available yet, the same snapshot as the events tab is shown as a placeholder (`hosted_snapshot` or `hosted_clip` via `buildMediaUrl`). Player is paused on lifecycle `ON_PAUSE` and released in AndroidView `onRelease`.
-- **Actions:** Row of three buttons — Mark Reviewed (primary), Keep (tertiary; disabled if `event.saved`), Delete (error). Success(Delete) or Success(Keep) calls `onEventActionCompleted()` then pops back; Success(Mark Reviewed) calls `onEventActionCompleted()` (so the events list refreshes in the background), shows Snackbar, and stays.
+- **Actions:** Row of three buttons — Mark Reviewed (primary), Keep (tertiary; disabled if `event.saved`), Delete (error). Success(Delete) or Success(Keep) calls `onEventActionCompleted(null, eventId)` or `onEventActionCompleted(null, null)` then pops back; Success(Mark Reviewed) calls `onEventActionCompleted(eventId, null)` (so the events list refreshes and the event is removed from unreviewed via local designation), shows Snackbar, and stays.
 
 ### Coil and video thumbnails
 

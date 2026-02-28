@@ -1,6 +1,5 @@
 package com.example.frigateeventviewer.ui.screens
 
-import android.app.Application
 import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,6 +25,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -44,7 +44,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
@@ -61,15 +60,12 @@ fun EventsScreen(
     currentPage: Int,
     pageIndex: Int,
     sharedEventViewModel: SharedEventViewModel,
-    viewModel: EventsViewModel = viewModel(
-        factory = EventsViewModelFactory(
-            LocalContext.current.applicationContext as Application,
-            sharedEventViewModel
-        )
-    )
+    viewModel: EventsViewModel
 ) {
     val state by viewModel.state.collectAsState()
     val baseUrl by viewModel.baseUrl.collectAsState()
+    val filterMode by viewModel.filterMode.collectAsState()
+    val filterToggleButtonLabel by viewModel.filterToggleButtonLabel.collectAsState()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
 
     LaunchedEffect(lifecycle, currentPage, pageIndex) {
@@ -80,8 +76,21 @@ fun EventsScreen(
         }
     }
 
+    val isLoading = state is EventsState.Loading
+    val previousResponse = when (val s = state) {
+        is EventsState.Loading -> s.previous
+        is EventsState.Error -> s.previous
+        is EventsState.Success -> null
+    }
+    val displayEvents by viewModel.displayedEvents.collectAsState()
+    val showFullScreenSpinner = isLoading && previousResponse == null
+    val showList = displayEvents.isNotEmpty() && !showFullScreenSpinner
+    val showEmptyState = displayEvents.isEmpty() && !showFullScreenSpinner && state is EventsState.Success
+    val showErrorState = state is EventsState.Error && previousResponse == null
+    val showErrorBanner = state is EventsState.Error && previousResponse != null
+
     PullToRefreshBox(
-        isRefreshing = state is EventsState.Loading,
+        isRefreshing = isLoading,
         onRefresh = { viewModel.refresh() },
         modifier = Modifier.fillMaxSize()
     ) {
@@ -90,68 +99,103 @@ fun EventsScreen(
                 .fillMaxSize()
                 .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 16.dp)
         ) {
-            when (val s = state) {
-                is EventsState.Loading -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .fillMaxSize(),
-                        contentAlignment = Alignment.Center
+            OutlinedButton(
+                onClick = { viewModel.setFilterMode(filterMode == EventsFilterMode.Unreviewed) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(40.dp)
+                    .padding(bottom = 8.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(
+                    text = filterToggleButtonLabel,
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1
+                )
+            }
+            if (showFullScreenSpinner) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else if (showErrorState) {
+                val err = state as EventsState.Error
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxSize(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = err.message,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Button(
+                        onClick = { viewModel.refresh() },
+                        modifier = Modifier.padding(top = 16.dp)
                     ) {
-                        CircularProgressIndicator()
+                        Text("Retry")
                     }
                 }
-                is EventsState.Error -> {
-                    Column(
+            } else if (showEmptyState) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (filterMode == EventsFilterMode.Reviewed) "No reviewed events" else "No unreviewed events",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else if (showList) {
+                if (showErrorBanner) {
+                    val err = state as EventsState.Error
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .fillMaxSize(),
-                        verticalArrangement = Arrangement.Center,
-                        horizontalAlignment = Alignment.CenterHorizontally
+                            .padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = s.message,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.error
+                            text = err.message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.weight(1f)
                         )
-                        Button(
-                            onClick = { viewModel.refresh() },
-                            modifier = Modifier.padding(top = 16.dp)
-                        ) {
-                            Text("Retry")
-                        }
+                        Button(onClick = { viewModel.refresh() }) { Text("Retry") }
                     }
                 }
-                is EventsState.Success -> {
-                    val events = s.response.events
-                    if (events.isEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "No unreviewed events",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(0.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            items(events, key = { it.event_id }) { event ->
-                                EventCard(
-                                    event = event,
-                                    baseUrl = baseUrl,
-                                    onClick = { onEventClick(event) }
-                                )
-                            }
-                        }
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(0.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(displayEvents, key = { it.event_id }) { event ->
+                        EventCard(
+                            event = event,
+                            baseUrl = baseUrl,
+                            onClick = { onEventClick(event) }
+                        )
                     }
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
                 }
             }
         }

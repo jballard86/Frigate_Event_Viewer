@@ -95,9 +95,9 @@ app/src/main/java/com/example/frigateeventviewer/
     │   ├── DeepLinkViewModel.kt       # Pending deep-link ce_id and resolve trigger; used by MainActivity for buffer://event_detail/{ce_id}
     │   ├── EventDetailScreen.kt       # Event detail: video (Media3) or snapshot placeholder when no clip; actions, metadata + EventDetailViewModel/Factory
     │   ├── EventNotFoundScreen.kt     # Shown when deep link cannot resolve to an event; Refresh retries resolution
-    │   ├── EventsScreen.kt            # Events list UI + EventsViewModel/Factory
-    │   ├── MainTabsScreen.kt          # HorizontalPager + bottom navigation hosting Dashboard/Events/DailyReview; header has Snooze (Dashboard only) + Settings
-    │   ├── SharedEventViewModel.kt    # Activity-scoped: selectedEvent for event_detail; eventsRefreshRequested to trigger events list refresh after detail actions
+    │   ├── EventsScreen.kt            # Events list: two modes (Reviewed/Unreviewed), full-width toggle; dynamic title; local set primary for status; watchdog prune
+    │   ├── MainTabsScreen.kt          # HorizontalPager + bottom navigation hosting Dashboard/Events/DailyReview; header title from EventsViewModel when Events tab; Snooze (Dashboard only) + Settings
+    │   ├── SharedEventViewModel.kt    # Activity-scoped: selectedEvent for event_detail; requestEventsRefresh(markedReviewedEventId?, deletedEventId?) for events list + local designation
     │   ├── SettingsScreen.kt          # Server URL input + SettingsViewModel/Factory
     │   ├── SnoozeScreen.kt            # Per-camera snooze: presets 30m/1h/2h, AI vs Notification toggles, camera list with Snooze/Clear
     │   └── SnoozeViewModel.kt         # SnoozeViewModel/Factory: getCameras, getSnoozeList, setSnooze, clearSnooze
@@ -135,7 +135,7 @@ app/src/main/java/com/example/frigateeventviewer/
    - The event selected for the detail screen is held in `SharedEventViewModel.selectedEvent` (activity-scoped).
    - EventsScreen sets it via `selectEvent(event)` when the user taps an event card, then navigates to `"event_detail"`.
    - When the user leaves the detail screen (back), MainActivity calls `selectEvent(null)` so the app does not hold the event in memory longer than needed.
-   - When the user completes an action on EventDetailScreen (Mark Reviewed, Keep, or Delete), MainActivity passes `onEventActionCompleted` which calls `SharedEventViewModel.requestEventsRefresh()`. EventsViewModel subscribes to `eventsRefreshRequested` and refetches the events list so the UI stays in sync.
+   - When the user completes an action on EventDetailScreen (Mark Reviewed, Keep, or Delete), MainActivity invokes `onEventActionCompleted(markedReviewedEventId, deletedEventId)`, which calls `SharedEventViewModel.requestEventsRefresh(markedReviewedEventId, deletedEventId)`. EventsViewModel subscribes to `eventsRefreshRequested`, updates local designation (add/remove event id), and refetches the events list so the UI stays in sync.
 
 4. **Media URLs**
    - API returns paths (e.g. `hosted_snapshot`). Full URL = `{baseUrl}{path}`.
@@ -162,7 +162,7 @@ app/src/main/java/com/example/frigateeventviewer/
 
 ## 6. Navigation
 
-Navigation (routes, start destination, launch decision, bottom bar) is documented in `docs/UI_MAP.md`. Keep that document updated when adding or changing screens or routes.
+Navigation (routes, start destination, launch decision, bottom bar) is documented in `docs/UI_MAP.md`. Keep that document updated when adding or changing screens or routes. The Events screen has two filter states (Reviewed / Unreviewed) and a dynamic title per UI_MAP.
 
 **Deep link:** MainActivity handles `buffer://event_detail/{ce_id}`. It also handles notification taps: when the user taps a notification body or "Play", the app is launched with intent extra `EXTRA_CE_ID` (from [FrigateFirebaseMessagingService](app/src/main/java/com/example/frigateeventviewer/data/push/FrigateFirebaseMessagingService.kt)); MainActivity treats this like a deep link by building `buffer://event_detail/{ce_id}` and running the same resolution. It parses the URI (or ce_id from extra), fetches events (GET /events?filter=all), finds the event via [EventMatching.findEventByCeId](app/src/main/java/com/example/frigateeventviewer/data/util/EventMatching.kt) (matches both full ce_id and folder name without `ce_` prefix), sets `SharedEventViewModel.selectedEvent` and navigates to `event_detail`. If not found, navigates to `event_not_found/{ce_id}` which shows "Event not found" and a Refresh button that retries resolution. `onNewIntent` updates the intent and triggers the same resolution so opening a second link or tapping another notification works.
 

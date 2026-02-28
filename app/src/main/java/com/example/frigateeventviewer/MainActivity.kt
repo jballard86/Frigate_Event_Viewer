@@ -37,6 +37,8 @@ import com.example.frigateeventviewer.ui.screens.DeepLinkViewModel
 import com.example.frigateeventviewer.ui.screens.EventDetailScreen
 import com.example.frigateeventviewer.ui.screens.EventDetailViewModel
 import com.example.frigateeventviewer.ui.screens.EventDetailViewModelFactory
+import com.example.frigateeventviewer.ui.screens.EventsViewModel
+import com.example.frigateeventviewer.ui.screens.EventsViewModelFactory
 import com.example.frigateeventviewer.ui.screens.EventNotFoundScreen
 import com.example.frigateeventviewer.ui.screens.SharedEventViewModel
 import com.example.frigateeventviewer.ui.screens.SettingsScreen
@@ -208,10 +210,13 @@ class MainActivity : ComponentActivity() {
                     composable("main_tabs") {
                         val dailyReviewViewModel: DailyReviewViewModel =
                             viewModel(factory = DailyReviewViewModelFactory(application))
+                        val eventsViewModel: EventsViewModel =
+                            viewModel(factory = EventsViewModelFactory(application, sharedEventViewModel))
                         MainTabsScreen(
                             navController = navController,
                             sharedEventViewModel = sharedEventViewModel,
-                            dailyReviewViewModel = dailyReviewViewModel
+                            dailyReviewViewModel = dailyReviewViewModel,
+                            eventsViewModel = eventsViewModel
                         )
                     }
                     composable(
@@ -247,7 +252,12 @@ class MainActivity : ComponentActivity() {
                                 sharedEventViewModel.selectEvent(null)
                                 navController.popBackStack()
                             },
-                            onEventActionCompleted = sharedEventViewModel::requestEventsRefresh,
+                            onEventActionCompleted = { markedReviewedEventId, deletedEventId ->
+                                sharedEventViewModel.requestEventsRefresh(
+                                    markedReviewedEventId = markedReviewedEventId,
+                                    deletedEventId = deletedEventId
+                                )
+                            },
                             viewModel = eventDetailViewModel
                         )
                     }

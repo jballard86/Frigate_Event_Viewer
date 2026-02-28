@@ -21,6 +21,8 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,16 +35,18 @@ import kotlinx.coroutines.launch
 fun MainTabsScreen(
     navController: NavHostController,
     sharedEventViewModel: SharedEventViewModel,
-    dailyReviewViewModel: DailyReviewViewModel
+    dailyReviewViewModel: DailyReviewViewModel,
+    eventsViewModel: EventsViewModel
 ) {
     val pagerState = rememberPagerState(
         initialPage = 0,
         pageCount = { 3 }
     )
     val coroutineScope = rememberCoroutineScope()
+    val eventsPageTitle by eventsViewModel.eventsPageTitle.collectAsState()
     val pageTitle = when (pagerState.currentPage) {
         0 -> "Dashboard"
-        1 -> "Events"
+        1 -> eventsPageTitle
         2 -> "Daily Review"
         else -> ""
     }
@@ -137,7 +141,8 @@ fun MainTabsScreen(
                     },
                     currentPage = currentPage,
                     pageIndex = 1,
-                    sharedEventViewModel = sharedEventViewModel
+                    sharedEventViewModel = sharedEventViewModel,
+                    viewModel = eventsViewModel
                 )
                 2 -> DailyReviewScreen(
                     viewModel = dailyReviewViewModel,
