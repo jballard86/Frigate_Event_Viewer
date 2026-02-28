@@ -1,15 +1,25 @@
 package com.example.frigateeventviewer.ui.screens
 
+import androidx.compose.foundation.border
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.NotificationsOff
@@ -32,8 +42,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.navigation.NavHostController
 import com.example.frigateeventviewer.data.model.Event
 import kotlinx.coroutines.launch
@@ -71,7 +90,11 @@ fun MainTabsScreen(
     LaunchedEffect(isLandscape) {
         if (isLandscape) showBottomBarInLandscape = false
     }
+    val density = LocalDensity.current
+    val dragThresholdPx = with(density) { 40.dp.toPx() }
+    val totalDragPx = remember { mutableStateOf(0f) }
 
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
@@ -109,43 +132,138 @@ fun MainTabsScreen(
             }
         },
         bottomBar = {
-            if (showBottomBar) {
-                NavigationBar {
-                    NavigationBarItem(
-                        selected = pagerState.currentPage == 0,
-                        onClick = {
-                            coroutineScope.launch {
-                                pagerState.animateScrollToPage(0)
+            if (isLandscape) {
+                AnimatedVisibility(
+                    visible = showBottomBarInLandscape,
+                    enter = expandVertically(),
+                    exit = shrinkVertically()
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        BoxWithConstraints(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color.Transparent)
+                        ) {
+                            val barMaxWidth = maxWidth
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.CenterEnd
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .padding(end = barMaxWidth * 0.1f)
+                                        .size(48.dp)
+                                        .alpha(landscapeTabIconAlpha)
+                                        .border(
+                                            width = 2.dp,
+                                            color = MaterialTheme.colorScheme.outline,
+                                            shape = CircleShape
+                                        )
+                                        .semantics {
+                                            contentDescription = "Drag down to hide tab bar"
+                                        }
+                                        .pointerInput(dragThresholdPx) {
+                                            detectVerticalDragGestures(
+                                                onVerticalDrag = { _, dy ->
+                                                    totalDragPx.value += dy
+                                                },
+                                                onDragEnd = {
+                                                    if (totalDragPx.value < -dragThresholdPx) {
+                                                        showBottomBarInLandscape = true
+                                                    } else if (totalDragPx.value > dragThresholdPx) {
+                                                        showBottomBarInLandscape = false
+                                                    }
+                                                    totalDragPx.value = 0f
+                                                }
+                                            )
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.KeyboardArrowDown,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(28.dp),
+                                        tint = MaterialTheme.colorScheme.outline
+                                    )
+                                }
                             }
-                        },
-                        icon = { Icon(Icons.Default.Dashboard, contentDescription = "Dashboard") },
-                        label = { Text("Dashboard") }
-                    )
-                    NavigationBarItem(
-                        selected = pagerState.currentPage == 1,
-                        onClick = {
-                            coroutineScope.launch {
-                                pagerState.animateScrollToPage(1)
-                            }
-                        },
-                        icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Events") },
-                        label = { Text("Events") }
-                    )
-                    NavigationBarItem(
-                        selected = pagerState.currentPage == 2,
-                        onClick = {
-                            coroutineScope.launch {
-                                pagerState.animateScrollToPage(2)
-                            }
-                        },
-                        icon = { Icon(Icons.Default.Description, contentDescription = "Daily Review") },
-                        label = { Text("Daily Review") }
-                    )
+                        }
+                        NavigationBar {
+                            NavigationBarItem(
+                                selected = pagerState.currentPage == 0,
+                                onClick = {
+                                    coroutineScope.launch {
+                                        pagerState.animateScrollToPage(0)
+                                    }
+                                },
+                                icon = { Icon(Icons.Default.Dashboard, contentDescription = "Dashboard") },
+                                label = { Text("Dashboard") }
+                            )
+                            NavigationBarItem(
+                                selected = pagerState.currentPage == 1,
+                                onClick = {
+                                    coroutineScope.launch {
+                                        pagerState.animateScrollToPage(1)
+                                    }
+                                },
+                                icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Events") },
+                                label = { Text("Events") }
+                            )
+                            NavigationBarItem(
+                                selected = pagerState.currentPage == 2,
+                                onClick = {
+                                    coroutineScope.launch {
+                                        pagerState.animateScrollToPage(2)
+                                    }
+                                },
+                                icon = { Icon(Icons.Default.Description, contentDescription = "Daily Review") },
+                                label = { Text("Daily Review") }
+                            )
+                        }
+                    }
+                }
+            } else {
+                if (showBottomBar) {
+                    NavigationBar {
+                        NavigationBarItem(
+                            selected = pagerState.currentPage == 0,
+                            onClick = {
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(0)
+                                }
+                            },
+                            icon = { Icon(Icons.Default.Dashboard, contentDescription = "Dashboard") },
+                            label = { Text("Dashboard") }
+                        )
+                        NavigationBarItem(
+                            selected = pagerState.currentPage == 1,
+                            onClick = {
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(1)
+                                }
+                            },
+                            icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Events") },
+                            label = { Text("Events") }
+                        )
+                        NavigationBarItem(
+                            selected = pagerState.currentPage == 2,
+                            onClick = {
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(2)
+                                }
+                            },
+                            icon = { Icon(Icons.Default.Description, contentDescription = "Daily Review") },
+                            label = { Text("Daily Review") }
+                        )
+                    }
                 }
             }
         }
     ) { innerPadding ->
-        Box(modifier = Modifier.fillMaxSize()) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val currentPage = pagerState.currentPage
             HorizontalPager(
                 state = pagerState,
@@ -176,20 +294,52 @@ fun MainTabsScreen(
                 }
             }
             if (isLandscape && !showBottomBarInLandscape) {
-                IconButton(
-                    onClick = { showBottomBarInLandscape = true },
+                Box(
                     modifier = Modifier
+                        .zIndex(1f)
                         .align(Alignment.BottomEnd)
-                        .padding(16.dp)
-                        .then(Modifier.alpha(landscapeTabIconAlpha))
+                        .offset(
+                            x = -(maxWidth * 0.1f),
+                            y = -(maxHeight * 0.1f)
+                        )
+                        .size(48.dp)
+                        .alpha(landscapeTabIconAlpha)
+                        .border(
+                            width = 2.dp,
+                            color = MaterialTheme.colorScheme.outline,
+                            shape = CircleShape
+                        )
+                        .semantics {
+                            contentDescription = "Drag up to show tab bar"
+                        }
+                        .pointerInput(dragThresholdPx) {
+                            detectVerticalDragGestures(
+                                onVerticalDrag = { _, dy ->
+                                    totalDragPx.value += dy
+                                },
+                                onDragEnd = {
+                                    if (totalDragPx.value < -dragThresholdPx) {
+                                        showBottomBarInLandscape = true
+                                    } else if (totalDragPx.value > dragThresholdPx) {
+                                        showBottomBarInLandscape = false
+                                    }
+                                    totalDragPx.value = 0f
+                                }
+                            )
+                        },
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Dashboard,
-                        contentDescription = "Show tab bar"
+                        imageVector = Icons.Default.KeyboardArrowUp,
+                        contentDescription = null,
+                        modifier = Modifier.size(28.dp),
+                        tint = MaterialTheme.colorScheme.outline
                     )
                 }
             }
         }
+        }
+    }
     }
 }
 
