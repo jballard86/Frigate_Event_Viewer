@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,13 +61,25 @@ fun MainTabsScreen(
                     text = pageTitle,
                     style = MaterialTheme.typography.headlineLarge
                 )
-                IconButton(
-                    onClick = { navController.navigate("settings") }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = "Settings"
-                    )
+                Row(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
+                    if (pagerState.currentPage == 0) {
+                        IconButton(
+                            onClick = { navController.navigate("snooze") }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.NotificationsOff,
+                                contentDescription = "Snooze"
+                            )
+                        }
+                    }
+                    IconButton(
+                        onClick = { navController.navigate("settings") }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Settings"
+                        )
+                    }
                 }
             }
         },

@@ -70,28 +70,33 @@ Package base: `com.example.frigateeventviewer`.
 ```
 app/src/main/java/com/example/frigateeventviewer/
 ├── FrigateEventViewerApplication.kt   # Application: Coil ImageLoaderFactory (StreamingVideoFetcher); "Security Alerts" notification channel (PushConstants.CHANNEL_ID_SECURITY_ALERTS)
-├── MainActivity.kt                    # Single Activity; Compose; NavHost (settings, main_tabs, event_detail)
+├── MainActivity.kt                    # Single Activity; Compose; NavHost (settings, main_tabs, event_not_found, event_detail, snooze); handles deep link buffer://event_detail/{ce_id} via DeepLinkViewModel
 ├── data/
 │   ├── api/
 │   │   ├── ApiClient.kt               # Retrofit/OkHttp factory; createService(baseUrl)
-│   │   └── FrigateApiService.kt       # Retrofit: getEvents, getStats, getStatus, getCurrentDailyReview, generateDailyReview, markViewed, keepEvent, deleteEvent, registerDevice
-│   ├── model/                         # DTOs for API responses (Event, EventsResponse, StatsResponse, DailyReviewResponse, GenerateReportResponse, RegisterDeviceRequest/Response, etc.)
+│   │   └── FrigateApiService.kt       # Retrofit: getEvents, getCameras, getStats, getStatus, getCurrentDailyReview, generateDailyReview, markViewed, keepEvent, deleteEvent, registerDevice, getSnoozeList, setSnooze, clearSnooze, getUnreadCount
+│   ├── model/                         # DTOs for API responses (Event, EventsResponse, StatsResponse, CamerasResponse, SnoozeRequest, SnoozeResponse, SnoozeEntry, UnreadCountResponse, DailyReviewResponse, etc.)
 │   ├── preferences/
 │   │   └── SettingsPreferences.kt     # DataStore: baseUrl flow, saveBaseUrl, normalizeBaseUrl
 │   └── push/
 │       ├── PushConstants.kt           # CHANNEL_ID_SECURITY_ALERTS; notificationId(ce_id) for deterministic slotting; used by Application and FrigateFirebaseMessagingService
 │       ├── EventNotification.kt       # FCM payload model (NotificationPhase, EventNotification) and EventNotification.from(data) parser
 │       ├── FcmTokenManager.kt         # FCM token fetch + POST /api/mobile/register via SettingsPreferences baseUrl; registerIfPossible(), registerToken(token) for onNewToken
-│       └── FrigateFirebaseMessagingService.kt   # FirebaseMessagingService: onNewToken → registerToken; onMessageReceived parses EventNotification, cancel (clear/DISCARDED), handleNew (large icon), handleSnapshotReady (BigPictureStyle), handleClipReady (Play action + teaser)
+│       ├── FrigateFirebaseMessagingService.kt   # FirebaseMessagingService: onNewToken → registerToken; onMessageReceived parses EventNotification, cancel (clear/DISCARDED), handleNew (large icon), handleSnapshotReady (BigPictureStyle), handleClipReady (Play + Mark Reviewed + Keep actions + teaser)
+│       └── NotificationActionReceiver.kt       # BroadcastReceiver: MARK_REVIEWED (POST /viewed, cancel notification, Toast), KEEP (POST /keep, update notification "Saved", Toast); exported=false
 └── ui/
     ├── screens/                       # One screen = one *Screen.kt + one *ViewModel.kt (and optional *ViewModelFactory)
     │   ├── DashboardScreen.kt         # Dashboard UI + DashboardViewModel/Factory
     │   ├── DailyReviewScreen.kt       # Daily review Markdown UI + DailyReviewViewModel/Factory
+    │   ├── DeepLinkViewModel.kt       # Pending deep-link ce_id and resolve trigger; used by MainActivity for buffer://event_detail/{ce_id}
     │   ├── EventDetailScreen.kt       # Event detail: video (Media3), actions, metadata + EventDetailViewModel/Factory
+    │   ├── EventNotFoundScreen.kt     # Shown when deep link cannot resolve to an event; Refresh retries resolution
     │   ├── EventsScreen.kt            # Events list UI + EventsViewModel/Factory
-    │   ├── MainTabsScreen.kt          # HorizontalPager + bottom navigation hosting Dashboard/Events/DailyReview
+    │   ├── MainTabsScreen.kt          # HorizontalPager + bottom navigation hosting Dashboard/Events/DailyReview; header has Snooze (Dashboard only) + Settings
     │   ├── SharedEventViewModel.kt    # Activity-scoped: selectedEvent for event_detail; eventsRefreshRequested to trigger events list refresh after detail actions
-    │   └── SettingsScreen.kt          # Server URL input + SettingsViewModel/Factory
+    │   ├── SettingsScreen.kt          # Server URL input + SettingsViewModel/Factory
+    │   ├── SnoozeScreen.kt            # Per-camera snooze: presets 30m/1h/2h, AI vs Notification toggles, camera list with Snooze/Clear
+    │   └── SnoozeViewModel.kt         # SnoozeViewModel/Factory: getCameras, getSnoozeList, setSnooze, clearSnooze
     ├── theme/
     │   ├── Theme.kt
     │   ├── Color.kt
@@ -139,16 +144,23 @@ app/src/main/java/com/example/frigateeventviewer/
    - On app start (MainActivity `LaunchedEffect`) and after first-run Save (SettingsViewModel.saveBaseUrl), `FcmTokenManager` fetches the FCM token and, if a base URL is set in SettingsPreferences, POSTs it to `POST /api/mobile/register`. On token rotation, `FrigateFirebaseMessagingService.onNewToken` calls `FcmTokenManager.registerToken(newToken)`. Server URL is never hardcoded.
 
 7. **FCM phase-aware notifications**
-   - `FrigateFirebaseMessagingService.onMessageReceived` parses FCM data into `EventNotification`; if base URL is missing, no notification is posted. Notifications use `notificationId(ce_id)` so the same event updates in place. NEW: live frame as large icon; SNAPSHOT_READY: BigPictureStyle; CLIP_READY: AI title/description, Play action, teaser first frame. Media URLs built with `buildMediaUrl(baseUrl, path)`; all image loads use Coil with `allowHardware(false)` and run on the service's IO scope.
+   - `FrigateFirebaseMessagingService.onMessageReceived` parses FCM data into `EventNotification`; if base URL is missing, no notification is posted. Notifications use `notificationId(ce_id)` so the same event updates in place. NEW: live frame as large icon; SNAPSHOT_READY: BigPictureStyle; CLIP_READY: AI title/description, Play action, Mark Reviewed and Keep actions (via [NotificationActionReceiver](app/src/main/java/com/example/frigateeventviewer/data/push/NotificationActionReceiver.kt)), teaser first frame. Media URLs built with `buildMediaUrl(baseUrl, path)`; all image loads use Coil with `allowHardware(false)` and run on the service's IO scope.
+8. **Notification quick actions**
+   - CLIP_READY notifications include "Mark Reviewed" and "Keep" buttons. Taps are handled by `NotificationActionReceiver` (registered with `android:exported="false"`). Event path is reconstructed as `events/{ce_id}`. Mark Reviewed calls POST /viewed and cancels the notification; Keep calls POST /keep and updates the same notification to "Saved". Toasts give feedback; on API failure a Toast shows the error.
 
-8. **AndroidManifest**
+9. **AndroidManifest**
    - `android:usesCleartextTraffic="true"` on `<application>` for local HTTP backends. FCM service is declared with `com.google.firebase.MESSAGING_EVENT` so FCM can deliver messages and invoke `onNewToken`.
+
+10. **Presence and badge**
+   - On [MainActivity](app/src/main/java/com/example/frigateeventviewer/MainActivity.kt) `onResume()`, the app calls GET /api/events/unread_count (see [FrigateApiService.getUnreadCount](app/src/main/java/com/example/frigateeventviewer/data/api/FrigateApiService.kt)). The count is used to update the app icon badge: a silent, low-priority notification (channel [PushConstants.CHANNEL_ID_BADGE](app/src/main/java/com/example/frigateeventviewer/data/push/PushConstants.kt)) is posted with `NotificationCompat.setNumber(count)` so launchers (e.g. Pixel, Samsung) show the numeric badge. When count is 0 the notification is cancelled so the badge clears.
 
 ---
 
 ## 6. Navigation
 
 Navigation (routes, start destination, launch decision, bottom bar) is documented in `docs/UI_MAP.md`. Keep that document updated when adding or changing screens or routes.
+
+**Deep link:** MainActivity handles `buffer://event_detail/{ce_id}`. It parses the URI, fetches events (GET /events?filter=all), finds the event by `event_id` or `camera=="events" && subdir`, sets `SharedEventViewModel.selectedEvent` and navigates to `event_detail`. If not found, navigates to `event_not_found/{ce_id}` which shows "Event not found" and a Refresh button that retries resolution. `onNewIntent` updates the intent and triggers the same resolution so opening a second link works.
 
 ---
 

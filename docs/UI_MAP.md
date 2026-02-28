@@ -14,7 +14,7 @@ Whenever a new screen or navigation route is added to the app, the AI agent **MU
 
 Apply these rules across all screens to keep the app visually consistent.
 
-- **Screen headers:** The three main tab screens (Dashboard, Events, Daily Review) use a large top-app-bar style title at the top of their main content: `MaterialTheme.typography.headlineLarge`, with **16.dp** horizontal and top padding and **8.dp** bottom spacing before the body content. Main screen headers include a **settings navigation icon on the right** that navigates to the settings route; back from Settings returns to the main tabs.
+- **Screen headers:** The three main tab screens (Dashboard, Events, Daily Review) use a large top-app-bar style title at the top of their main content: `MaterialTheme.typography.headlineLarge`, with **16.dp** horizontal and top padding and **8.dp** bottom spacing before the body content. Main screen headers include a **settings navigation icon on the right** that navigates to the settings route; when on the **Dashboard** tab, a **Snooze** icon (NotificationsOff) is also shown and navigates to the snooze route. Back from Settings or Snooze returns to the main tabs.
 - **Nested screens (Settings, Event detail):** Use a **TopAppBar** with title and **navigationIcon** = `IconButton` + `Icons.AutoMirrored.Filled.ArrowBack` for consistent back styling. These screens also use **full-width swipe-back** via **SwipeBackBox** (see `ui/util/SwipeBack.kt`): a rightward swipe from anywhere on the screen triggers back (same feel as swiping between tabs). Vertical scroll is preserved: the gesture is only consumed when horizontal movement exceeds the threshold and dominates vertical movement.
 - **Container margins:** Main screen containers use uniform **16.dp** horizontal padding so content aligns cleanly to the screen edges. Avoid double-padding inner children (e.g. do not add extra horizontal padding inside a Column that already sits in a padded container).
 - **Shapes:** Major UI elements (video players, cards, action buttons) use **12.dp** rounded corners: `RoundedCornerShape(12.dp)`. Do not use the default Compose pill shape for primary action buttons; use the 12.dp shape to match video and cards.
@@ -51,6 +51,13 @@ flowchart TD
     bottomBar -->|Daily Review tab or swipe| dailyReview
     events -->|Tap event| eventDetail
     eventDetail -->|Back| events
+    deeplink["buffer://event_detail/ce_id"] --> mainTabs
+    deeplink -->|Resolve to event| eventDetail
+    deeplink -->|Not found| eventNotFound["EventNotFoundScreen"]
+    eventNotFound -->|Refresh| eventDetail
+    eventNotFound -->|Back| mainTabs
+    dashboard -->|Snooze icon| snooze["SnoozeScreen"]
+    snooze -->|Back| mainTabs
 ```
 
 **Flow summary:**
@@ -61,6 +68,8 @@ flowchart TD
 - **After Save:** `onNavigateToDashboard` runs → navigate to `"main_tabs"`, pop `"settings"` inclusive.
 - **Bottom bar + pager:** MainTabsScreen owns a `Scaffold` with a bottom bar and a `HorizontalPager` with three pages: Dashboard, Events, and Daily Review. Tapping Dashboard, Events, or Daily Review animates the pager to the corresponding page; swiping between pages also updates the selected bottom bar item.
 - **Event detail:** From EventsScreen (inside the pager), tapping an event card sets `SharedEventViewModel.selectedEvent` and navigates to `"event_detail"`. EventDetailScreen shows video, actions (Mark Reviewed, Keep, Delete), and metadata. Back (toolbar or system) clears selection and pops to the previous screen.
+- **Deep link:** The app can be opened via `buffer://event_detail/{ce_id}`. MainActivity parses the URI, fetches events (GET /events?filter=all), finds the event by `event_id` or (camera `"events"` and `subdir`), sets the selected event and navigates to `"event_detail"`. If the event is not found, the app navigates to `event_not_found/{ce_id}` which shows "Event not found" and a **Refresh** button that retries the same resolution.
+- **Snooze:** From the Dashboard tab, the header shows a Snooze icon that navigates to `"snooze"`. SnoozeScreen lets the user set per-camera snooze with duration presets (30m, 1h, 2h), Notification Snooze and AI Snooze toggles, and a camera list with Snooze/Clear actions. Back returns to main tabs.
 
 ---
 
@@ -85,7 +94,7 @@ flowchart TD
 - **ViewModel:** `DashboardViewModel` (factory: `DashboardViewModelFactory`).
 - **States:** `DashboardState` — `Loading(previous?)` | `Success(stats)` | `Error(message, previous?)`.
 - **Data source:** `FrigateApiService.getStats()`.
-- **Refresh triggers:** init, pull-to-refresh, tab selected (current page), app resume (lifecycle `RESUMED` when this tab is visible).
+- **Refresh triggers:** init, pull-to-refresh, tab selected (current page), app resume (lifecycle `RESUMED` when this tab is visible). **Header:** When this tab is visible, the main-tabs top bar shows a Snooze icon that navigates to the snooze route.
 
 ---
 
@@ -121,13 +130,32 @@ flowchart TD
 
 ---
 
+### EventNotFoundScreen
+
+- **Route:** `"event_not_found/{ce_id}"` (path argument: `ce_id`).
+- **Purpose:** Shown when a deep link `buffer://event_detail/{ce_id}` could not resolve to an event (e.g. event not in list or not yet synced). Displays "Event not found" and the ce_id, with a **Refresh** button that retries resolution (fetch events, find by ce_id; if found, navigate to event_detail) and a **Back to app** button that clears the pending deep link and pops back to main tabs.
+- **ViewModel:** None; receives `ceId` from route, `onRefresh` and `onBack` from MainActivity.
+- **Data source:** None; actions trigger MainActivity/DeepLinkViewModel retry or back.
+
+---
+
+### SnoozeScreen
+
+- **Route:** `"snooze"`
+- **Purpose:** Per-camera snooze to mute notifications or AI processing until an expiration time. User selects duration preset (30m, 1h, 2h) with haptic feedback on selection, toggles "Notification Snooze" and "AI Snooze" (with sub-label "Mutes AI analysis but keeps basic motion alerts" for AI). Camera list shows each camera with Snooze or Clear button; active snoozes show expiration. Data loaded from GET /cameras and GET /api/snooze; set via POST /api/snooze/<camera>; clear via DELETE /api/snooze/<camera>. Reached from the Dashboard header Snooze icon.
+- **ViewModel:** `SnoozeViewModel` (factory: `SnoozeViewModelFactory`).
+- **States:** `SnoozeState` — `Loading` | `Ready(cameras, activeSnoozes)` | `Error(message)`. Also `selectedPresetIndex`, `snoozeNotifications`, `snoozeAi`, `selectedCamera`, `operationInProgress`.
+- **Data source:** `FrigateApiService.getCameras()`, `getSnoozeList()`, `setSnooze(camera, body)`, `clearSnooze(camera)`.
+
+---
+
 ## 3. UI components and helpers
 
 ### SwipeBackBox
 
 - **Location:** `com.example.frigateeventviewer.ui.util.SwipeBack.kt`
 - **Purpose:** Full-width swipe-right-to-go-back on nested screens (Settings, Event detail). A rightward swipe from anywhere triggers back, like swiping between tabs. Only consumes the gesture when horizontal movement exceeds the threshold and dominates vertical movement, so vertical scroll continues to work.
-- **Used by:** SettingsScreen, EventDetailScreen.
+- **Used by:** SettingsScreen, EventDetailScreen, SnoozeScreen.
 
 ### buildMediaUrl(baseUrl, path)
 

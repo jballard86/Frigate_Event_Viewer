@@ -9,6 +9,12 @@ package com.example.frigateeventviewer.data.push
 object PushConstants {
     /** Notification channel ID for security-alert push messages. Importance is set in Application. */
     const val CHANNEL_ID_SECURITY_ALERTS = "security_alerts"
+
+    /** Channel for the app-icon badge notification (unread count). Low importance, no sound. */
+    const val CHANNEL_ID_BADGE = "badge"
+
+    /** Fixed notification ID for the unread-count badge; update/cancel this to refresh the icon badge. */
+    const val BADGE_NOTIFICATION_ID = 0
 }
 
 /**

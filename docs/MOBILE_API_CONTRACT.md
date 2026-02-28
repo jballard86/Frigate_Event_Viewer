@@ -897,4 +897,8 @@ Full media URLs are built on the client as `{baseUrl}{path}` (see §2.4); the ap
 
 ---
 
+**App usage:** The Android app uses **§7.1** (GET `/api/events/unread_count`) to drive the app icon badge on resume, and **§8** (Snooze: GET/POST/DELETE `/api/snooze`) for the Snooze screen (per-camera snooze with duration presets and Notification/AI toggles).
+
+---
+
 *End of contract.*

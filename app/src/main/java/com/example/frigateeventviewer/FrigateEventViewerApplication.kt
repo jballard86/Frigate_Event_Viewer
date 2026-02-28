@@ -16,21 +16,33 @@ import com.example.frigateeventviewer.ui.util.StreamingVideoFetcher
  * MediaMetadataRetriever (frame at 2s) without full-file download. This avoids
  * ProtocolException and network saturation. Use the default Coil ImageLoader app-wide.
  *
- * Creates the "Security Alerts" notification channel (IMPORTANCE_HIGH) for FCM so
- * push notifications display with correct importance. Channel ID is [PushConstants.CHANNEL_ID_SECURITY_ALERTS].
+ * Creates the "Security Alerts" notification channel (IMPORTANCE_HIGH) for FCM and the
+ * "Unread count" badge channel (IMPORTANCE_LOW, no sound) for the app icon badge.
+ * Channel IDs: [PushConstants.CHANNEL_ID_SECURITY_ALERTS], [PushConstants.CHANNEL_ID_BADGE].
  */
 class FrigateEventViewerApplication : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val securityChannel = NotificationChannel(
                 PushConstants.CHANNEL_ID_SECURITY_ALERTS,
                 "Security Alerts",
                 NotificationManager.IMPORTANCE_HIGH
             )
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.createNotificationChannel(channel)
+            notificationManager.createNotificationChannel(securityChannel)
+            val badgeChannel = NotificationChannel(
+                PushConstants.CHANNEL_ID_BADGE,
+                "Unread count",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                setShowBadge(true)
+                enableLights(false)
+                enableVibration(false)
+                setSound(null, null)
+            }
+            notificationManager.createNotificationChannel(badgeChannel)
         }
     }
 

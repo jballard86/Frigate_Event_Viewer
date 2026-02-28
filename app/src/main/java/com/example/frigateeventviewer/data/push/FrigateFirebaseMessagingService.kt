@@ -221,6 +221,32 @@ class FrigateFirebaseMessagingService : FirebaseMessagingService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val markReviewedIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+            action = NotificationActionReceiver.ACTION_MARK_REVIEWED
+            setPackage(context.packageName)
+            putExtra(EXTRA_CE_ID, eventNotification.ce_id)
+            putExtra(NotificationActionReceiver.EXTRA_NOTIFICATION_ID, notificationId)
+        }
+        val markReviewedPendingIntent = PendingIntent.getBroadcast(
+            context,
+            notificationId + 2,
+            markReviewedIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val keepIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+            action = NotificationActionReceiver.ACTION_KEEP
+            setPackage(context.packageName)
+            putExtra(EXTRA_CE_ID, eventNotification.ce_id)
+            putExtra(NotificationActionReceiver.EXTRA_NOTIFICATION_ID, notificationId)
+        }
+        val keepPendingIntent = PendingIntent.getBroadcast(
+            context,
+            notificationId + 3,
+            keepIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val title = eventNotification.title?.takeIf { it.isNotBlank() } ?: "Event ready"
         val bodyText = eventNotification.description?.takeIf { it.isNotBlank() } ?: "Tap to view"
         val builder = NotificationCompat.Builder(context, PushConstants.CHANNEL_ID_SECURITY_ALERTS)
@@ -230,6 +256,8 @@ class FrigateFirebaseMessagingService : FirebaseMessagingService() {
             .setContentIntent(contentPendingIntent)
             .setAutoCancel(true)
             .addAction(android.R.drawable.ic_media_play, "Play", playPendingIntent)
+            .addAction(android.R.drawable.ic_menu_check_holo_dark, "Mark Reviewed", markReviewedPendingIntent)
+            .addAction(android.R.drawable.ic_menu_save, "Keep", keepPendingIntent)
         bitmap?.let { builder.setLargeIcon(it) }
 
         notificationManager.notify(notificationId, builder.build())
