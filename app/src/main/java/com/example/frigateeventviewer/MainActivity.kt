@@ -1,51 +1,162 @@
 package com.example.frigateeventviewer
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.net.toUri
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.example.frigateeventviewer.data.api.ApiClient
 import com.example.frigateeventviewer.data.preferences.SettingsPreferences
-import com.example.frigateeventviewer.data.model.Event
-import com.example.frigateeventviewer.ui.screens.DashboardScreen
-import com.example.frigateeventviewer.ui.screens.DailyReviewScreen
+import com.example.frigateeventviewer.data.push.FcmTokenManager
+import com.example.frigateeventviewer.data.push.FrigateFirebaseMessagingService
+import com.example.frigateeventviewer.data.push.UnreadBadgeHelper
+import com.example.frigateeventviewer.data.push.UnreadState
+import com.example.frigateeventviewer.data.util.EventMatching
 import com.example.frigateeventviewer.ui.screens.DailyReviewViewModel
 import com.example.frigateeventviewer.ui.screens.DailyReviewViewModelFactory
+import com.example.frigateeventviewer.ui.screens.DeepLinkViewModel
 import com.example.frigateeventviewer.ui.screens.EventDetailScreen
 import com.example.frigateeventviewer.ui.screens.EventDetailViewModel
 import com.example.frigateeventviewer.ui.screens.EventDetailViewModelFactory
-import com.example.frigateeventviewer.ui.screens.EventsScreen
+import com.example.frigateeventviewer.ui.screens.EventsViewModel
+import com.example.frigateeventviewer.ui.screens.EventsViewModelFactory
+import com.example.frigateeventviewer.ui.screens.EventNotFoundScreen
 import com.example.frigateeventviewer.ui.screens.SharedEventViewModel
 import com.example.frigateeventviewer.ui.screens.SettingsScreen
 import com.example.frigateeventviewer.ui.screens.MainTabsScreen
+import com.example.frigateeventviewer.ui.screens.MainTabsViewModel
+import com.example.frigateeventviewer.ui.screens.SnoozeScreen
 import com.example.frigateeventviewer.ui.theme.FrigateEventViewerTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
+
+    private val requestNotificationPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        // Permission result; notifications will show or not based on user choice.
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        applyDeepLinkOrNotificationIntent(intent)
+    }
+
+    /**
+     * Applies pending ce_id from deep link (intent.data) or notification tap (EXTRA_CE_ID).
+     * Triggers resolution so LaunchedEffect(resolveTrigger) can navigate to event_detail.
+     */
+    private fun applyDeepLinkOrNotificationIntent(intent: Intent?) {
+        if (intent == null) return
+        val uri = intent.data
+        val ceId = DeepLinkViewModel.parseDeepLinkCeId(uri)
+            ?: intent.getStringExtra(FrigateFirebaseMessagingService.EXTRA_CE_ID)?.takeIf { it.isNotBlank() }
+        if (ceId != null) {
+            deepLinkViewModel.setFromIntent(uri ?: "buffer://event_detail/$ceId".toUri())
+        }
+    }
+
+    private val deepLinkViewModel: DeepLinkViewModel by lazy {
+        ViewModelProvider(this)[DeepLinkViewModel::class.java]
+    }
+
+    override fun onResume() {
+        super.onResume()
+        UnreadBadgeHelper.updateFromServer(applicationContext)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val activity = this
         setContent {
             FrigateEventViewerTheme {
                 val navController = rememberNavController()
                 val sharedEventViewModel: SharedEventViewModel = viewModel<SharedEventViewModel>()
+                val mainTabsViewModel: MainTabsViewModel = viewModel()
                 val context = LocalContext.current
+                val resolveTrigger by deepLinkViewModel.resolveTrigger.collectAsState(initial = 0)
 
+                // Wait one frame so NavHost is composed before any navigate().
                 LaunchedEffect(Unit) {
+                    delay(50)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        requestNotificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                    applyDeepLinkOrNotificationIntent(intent)
+                    val uri = intent?.data
+                    val ceIdFromUri = DeepLinkViewModel.parseDeepLinkCeId(uri)
+                    val ceIdFromExtra = intent?.getStringExtra(FrigateFirebaseMessagingService.EXTRA_CE_ID)?.takeIf { it.isNotBlank() }
+                    if (ceIdFromUri == null && ceIdFromExtra == null) {
+                        val preferences = SettingsPreferences(context.applicationContext)
+                        val baseUrl = preferences.getBaseUrlOnce()
+                        if (baseUrl != null) {
+                            navController.navigate("main_tabs") {
+                                popUpTo("settings") { inclusive = true }
+                            }
+                        }
+                        FcmTokenManager(context.applicationContext).registerIfPossible()
+                    }
+                }
+
+                LaunchedEffect(resolveTrigger) {
+                    if (resolveTrigger == 0) return@LaunchedEffect
+                    val ceId = deepLinkViewModel.pendingCeId.value ?: return@LaunchedEffect
+                    delay(50)
                     val preferences = SettingsPreferences(context.applicationContext)
                     val baseUrl = preferences.getBaseUrlOnce()
-                    if (baseUrl != null) {
+                    if (baseUrl == null) {
+                        navController.navigate("settings")
+                        return@LaunchedEffect
+                    }
+                    val event = withContext(Dispatchers.IO) {
+                        try {
+                            val service = ApiClient.createService(baseUrl)
+                            val response = service.getEvents("all")
+                            response.events.find { e -> EventMatching.eventMatchesCeId(e, ceId) }
+                        } catch (_: Exception) {
+                            null
+                        }
+                    }
+                    if (event != null) {
+                        sharedEventViewModel.selectEvent(event)
+                        if (navController.currentBackStackEntry?.destination?.route?.startsWith("event_not_found") == true) {
+                            navController.popBackStack()
+                        } else {
+                            navController.navigate("main_tabs") {
+                                popUpTo("settings") { inclusive = true }
+                            }
+                        }
+                        navController.navigate("event_detail")
+                        activity.intent = Intent()
+                        deepLinkViewModel.clearPending()
+                    } else {
                         navController.navigate("main_tabs") {
                             popUpTo("settings") { inclusive = true }
                         }
+                        navController.navigate("event_not_found/$ceId")
                     }
                 }
 
@@ -65,12 +176,41 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     composable("main_tabs") {
+                        val settingsPrefs = remember(application) {
+                            SettingsPreferences(application)
+                        }
+                        val landscapeTabIconAlpha by settingsPrefs.landscapeTabIconAlpha.collectAsState(
+                            initial = 0.5f
+                        )
                         val dailyReviewViewModel: DailyReviewViewModel =
                             viewModel(factory = DailyReviewViewModelFactory(application))
+                        val eventsViewModel: EventsViewModel =
+                            viewModel(factory = EventsViewModelFactory(application, sharedEventViewModel))
                         MainTabsScreen(
                             navController = navController,
                             sharedEventViewModel = sharedEventViewModel,
-                            dailyReviewViewModel = dailyReviewViewModel
+                            mainTabsViewModel = mainTabsViewModel,
+                            dailyReviewViewModel = dailyReviewViewModel,
+                            eventsViewModel = eventsViewModel,
+                            landscapeTabIconAlpha = landscapeTabIconAlpha
+                        )
+                    }
+                    composable(
+                        "event_not_found/{ce_id}",
+                        arguments = listOf(navArgument("ce_id") { type = NavType.StringType })
+                    ) { backStackEntry ->
+                        val ceIdArg = backStackEntry.arguments?.getString("ce_id") ?: return@composable
+                        BackHandler {
+                            deepLinkViewModel.clearPending()
+                            navController.popBackStack()
+                        }
+                        EventNotFoundScreen(
+                            ceId = ceIdArg,
+                            onRefresh = { deepLinkViewModel.retryResolve() },
+                            onBack = {
+                                deepLinkViewModel.clearPending()
+                                navController.popBackStack()
+                            }
                         )
                     }
                     composable("event_detail") {
@@ -88,8 +228,29 @@ class MainActivity : ComponentActivity() {
                                 sharedEventViewModel.selectEvent(null)
                                 navController.popBackStack()
                             },
+                            onEventActionCompleted = { markedReviewedEventId: String?, deletedEventId: String? ->
+                                sharedEventViewModel.requestEventsRefresh(
+                                    markedReviewedEventId,
+                                    deletedEventId
+                                )
+                                if (markedReviewedEventId != null || deletedEventId != null) {
+                                    lifecycleScope.launch {
+                                        markedReviewedEventId?.let { UnreadState.recordMarkedReviewed(it) }
+                                        deletedEventId?.let { UnreadState.recordDeleted(it) }
+                                        withContext<Unit>(Dispatchers.Main) {
+                                            UnreadBadgeHelper.applyBadge(
+                                                applicationContext,
+                                                UnreadState.currentEffectiveUnreadCount()
+                                            )
+                                        }
+                                    }
+                                }
+                            },
                             viewModel = eventDetailViewModel
                         )
+                    }
+                    composable("snooze") {
+                        SnoozeScreen(onBack = { navController.popBackStack() })
                     }
                 }
             }

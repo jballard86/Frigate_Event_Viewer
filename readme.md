@@ -78,4 +78,5 @@ The application is designed for private, secure environments.
 - **Direct Connection**: Connect the app to your Frigate Event Buffer’s local IP and Port (default 5055).
 - **Remote Access**: Fully compatible with Tailscale or similar VPN solutions for secure, encrypted access while away from home.
 - **Configuration**: Manage server addresses and user preferences through the integrated Settings menu.
+- **Firebase (FCM)**: For push notifications, the app requires `app/google-services.json` from the Firebase Console (Android app in your project). Add the file to the `app/` module; it is gitignored. The Google Services plugin uses it at build time for FCM and related configuration.
 

@@ -84,6 +84,13 @@ class DailyReviewViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     /**
+     * Re-fetches the current report without regenerating. Used for pull-to-refresh and tab/resume.
+     */
+    fun refresh() {
+        fetchDailyReview()
+    }
+
+    /**
      * Triggers report generation (POST /api/daily-review/generate), then refetches on success.
      */
     fun generateNewReview() {

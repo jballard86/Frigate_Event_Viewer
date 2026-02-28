@@ -1,6 +1,7 @@
 package com.example.frigateeventviewer.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -20,30 +22,54 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.example.frigateeventviewer.data.model.Event
 import kotlinx.coroutines.launch
+import android.content.res.Configuration
 
 @Composable
 fun MainTabsScreen(
     navController: NavHostController,
     sharedEventViewModel: SharedEventViewModel,
-    dailyReviewViewModel: DailyReviewViewModel
+    mainTabsViewModel: MainTabsViewModel,
+    dailyReviewViewModel: DailyReviewViewModel,
+    eventsViewModel: EventsViewModel,
+    landscapeTabIconAlpha: Float = 0.5f
 ) {
+    val selectedTabIndex by mainTabsViewModel.selectedTabIndex.collectAsState()
     val pagerState = rememberPagerState(
-        initialPage = 0,
+        initialPage = selectedTabIndex,
         pageCount = { 3 }
     )
+    LaunchedEffect(pagerState.settledPage) {
+        mainTabsViewModel.setSelectedTabIndex(pagerState.settledPage)
+    }
     val coroutineScope = rememberCoroutineScope()
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    var showBottomBarInLandscape by remember { mutableStateOf(false) }
+    val eventsPageTitle by eventsViewModel.eventsPageTitle.collectAsState()
     val pageTitle = when (pagerState.currentPage) {
         0 -> "Dashboard"
-        1 -> "Events"
+        1 -> eventsPageTitle
         2 -> "Daily Review"
         else -> ""
+    }
+    val showBottomBar = !isLandscape || showBottomBarInLandscape
+    LaunchedEffect(isLandscape) {
+        if (isLandscape) showBottomBarInLandscape = false
     }
 
     Scaffold(
@@ -60,68 +86,108 @@ fun MainTabsScreen(
                     text = pageTitle,
                     style = MaterialTheme.typography.headlineLarge
                 )
-                IconButton(
-                    onClick = { navController.navigate("settings") }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = "Settings"
-                    )
+                Row(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
+                    if (pagerState.currentPage == 0) {
+                        IconButton(
+                            onClick = { navController.navigate("snooze") }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.NotificationsOff,
+                                contentDescription = "Snooze"
+                            )
+                        }
+                    }
+                    IconButton(
+                        onClick = { navController.navigate("settings") }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Settings"
+                        )
+                    }
                 }
             }
         },
         bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    selected = pagerState.currentPage == 0,
-                    onClick = {
-                        coroutineScope.launch {
-                            pagerState.animateScrollToPage(0)
-                        }
-                    },
-                    icon = { Icon(Icons.Default.Dashboard, contentDescription = "Dashboard") },
-                    label = { Text("Dashboard") }
-                )
-                NavigationBarItem(
-                    selected = pagerState.currentPage == 1,
-                    onClick = {
-                        coroutineScope.launch {
-                            pagerState.animateScrollToPage(1)
-                        }
-                    },
-                    icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Events") },
-                    label = { Text("Events") }
-                )
-                NavigationBarItem(
-                    selected = pagerState.currentPage == 2,
-                    onClick = {
-                        coroutineScope.launch {
-                            pagerState.animateScrollToPage(2)
-                        }
-                    },
-                    icon = { Icon(Icons.Default.Description, contentDescription = "Daily Review") },
-                    label = { Text("Daily Review") }
-                )
+            if (showBottomBar) {
+                NavigationBar {
+                    NavigationBarItem(
+                        selected = pagerState.currentPage == 0,
+                        onClick = {
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(0)
+                            }
+                        },
+                        icon = { Icon(Icons.Default.Dashboard, contentDescription = "Dashboard") },
+                        label = { Text("Dashboard") }
+                    )
+                    NavigationBarItem(
+                        selected = pagerState.currentPage == 1,
+                        onClick = {
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(1)
+                            }
+                        },
+                        icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Events") },
+                        label = { Text("Events") }
+                    )
+                    NavigationBarItem(
+                        selected = pagerState.currentPage == 2,
+                        onClick = {
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(2)
+                            }
+                        },
+                        icon = { Icon(Icons.Default.Description, contentDescription = "Daily Review") },
+                        label = { Text("Daily Review") }
+                    )
+                }
             }
         }
     ) { innerPadding ->
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) { page ->
-            when (page) {
-                0 -> DashboardScreen()
-                1 -> EventsScreen(
-                    onEventClick = { event: Event ->
-                        sharedEventViewModel.selectEvent(event)
-                        navController.navigate("event_detail")
-                    }
-                )
-                2 -> DailyReviewScreen(
-                    viewModel = dailyReviewViewModel
-                )
+        Box(modifier = Modifier.fillMaxSize()) {
+            val currentPage = pagerState.currentPage
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) { page ->
+                when (page) {
+                    0 -> DashboardScreen(
+                        currentPage = currentPage,
+                        pageIndex = 0
+                    )
+                    1 -> EventsScreen(
+                        onEventClick = { event: Event ->
+                            sharedEventViewModel.selectEvent(event)
+                            navController.navigate("event_detail")
+                        },
+                        currentPage = currentPage,
+                        pageIndex = 1,
+                        sharedEventViewModel = sharedEventViewModel,
+                        viewModel = eventsViewModel
+                    )
+                    2 -> DailyReviewScreen(
+                        viewModel = dailyReviewViewModel,
+                        currentPage = currentPage,
+                        pageIndex = 2
+                    )
+                }
+            }
+            if (isLandscape && !showBottomBarInLandscape) {
+                IconButton(
+                    onClick = { showBottomBarInLandscape = true },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(16.dp)
+                        .then(Modifier.alpha(landscapeTabIconAlpha))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Dashboard,
+                        contentDescription = "Show tab bar"
+                    )
+                }
             }
         }
     }

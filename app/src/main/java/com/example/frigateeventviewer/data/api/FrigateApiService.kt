@@ -1,13 +1,21 @@
 package com.example.frigateeventviewer.data.api
 
+import com.example.frigateeventviewer.data.model.CamerasResponse
 import com.example.frigateeventviewer.data.model.EventsResponse
+import com.example.frigateeventviewer.data.model.SnoozeEntry
+import com.example.frigateeventviewer.data.model.SnoozeRequest
+import com.example.frigateeventviewer.data.model.SnoozeResponse
 import com.example.frigateeventviewer.data.model.StatsResponse
 import com.example.frigateeventviewer.data.model.StatusResponse
+import com.example.frigateeventviewer.data.model.UnreadCountResponse
 import com.example.frigateeventviewer.data.model.DailyReviewResponse
 import com.example.frigateeventviewer.data.model.GenerateReportResponse
+import com.example.frigateeventviewer.data.model.RegisterDeviceRequest
+import com.example.frigateeventviewer.data.model.RegisterDeviceResponse
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
@@ -24,6 +32,10 @@ interface FrigateApiService {
     suspend fun getEvents(
         @Query("filter") filter: String? = null
     ): EventsResponse
+
+    /** List cameras (GET /cameras). Contract §1.1. */
+    @GET("cameras")
+    suspend fun getCameras(): CamerasResponse
 
     @GET("stats")
     suspend fun getStats(): StatsResponse
@@ -60,4 +72,27 @@ interface FrigateApiService {
     suspend fun deleteEvent(
         @Path("event_path", encoded = true) eventPath: String
     )
+
+    /** Register FCM device token (POST /api/mobile/register). Contract §6.1. */
+    @POST("api/mobile/register")
+    suspend fun registerDevice(@Body body: RegisterDeviceRequest): RegisterDeviceResponse
+
+    /** List active snoozes (GET /api/snooze). Contract §8.2. Returns camera name to snooze entry. */
+    @GET("api/snooze")
+    suspend fun getSnoozeList(): Map<String, SnoozeEntry>
+
+    /** Set snooze for a camera (POST /api/snooze/&lt;camera&gt;). Contract §8.1. */
+    @POST("api/snooze/{camera}")
+    suspend fun setSnooze(
+        @Path("camera") camera: String,
+        @Body body: SnoozeRequest
+    ): SnoozeResponse
+
+    /** Clear snooze for a camera (DELETE /api/snooze/&lt;camera&gt;). Contract §8.3. */
+    @DELETE("api/snooze/{camera}")
+    suspend fun clearSnooze(@Path("camera") camera: String): RegisterDeviceResponse
+
+    /** Get unread event count (GET /api/events/unread_count). Contract §7.1. */
+    @GET("api/events/unread_count")
+    suspend fun getUnreadCount(): UnreadCountResponse
 }

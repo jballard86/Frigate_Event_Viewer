@@ -437,7 +437,7 @@ Use this for **Frigate's** snapshot of an event. For the buffer's stored snapsho
 | `storage.total_display` | `{ value: number, unit: "KB"\|"MB"\|"GB" }` | No | |
 | `storage.by_camera`  | object | No       | Camera → size object. |
 | `storage.breakdown`  | object | No       | clips, snapshots, descriptions size. |
-| `errors`             | array  | No       | Recent errors: array of objects, each with `ts` (string, optional) and `message` (string, optional). |
+| `errors`             | array  | No       | Recent error strings. |
 | `last_cleanup`       | object | Yes      | `at` (string), `deleted` (int). |
 | `most_recent`        | object | Yes      | `event_id`, `camera`, `url`, `timestamp`. |
 | `system`             | object | No       | uptime, mqtt_connected, active_events, retention_days, etc. |
@@ -489,7 +489,7 @@ Use this for **Frigate's** snapshot of an event. For the buffer's stored snapsho
 | `uptime`        | string | No       | Human-readable uptime. |
 | `started_at`     | string | No       | Server start time. |
 | `active_events`  | object | No       | `total_active` (int), `by_phase` (object), `by_camera` (object). |
-| `metrics`       | object | No       | queue_size, active_threads, active_consolidated_events, recent_errors (array of objects with `ts`, `message`). |
+| `metrics`       | object | No       | queue_size, active_threads, active_consolidated_events, recent_errors. |
 | `config`        | object | No       | retention_days, log_level, ffmpeg_timeout, summary_padding_*. |
 
 ---
@@ -718,6 +718,188 @@ Server deletes existing clips in test folder, then requests new exports from Fri
 
 Fields may vary by proxy; common: `title`, `shortSummary`, `description`, `scene`, `potential_threat_level` (int).  
 **Errors:** 400 invalid test_run, 404 test folder or system_prompt.txt or no frame images, 500 loading frames, 502 `{ "error": "Proxy request failed" }`.
+
+---
+
+## 6. Mobile registration
+
+### 6.1 Register FCM device token
+
+**Endpoint path:** `/api/mobile/register`  
+**HTTP method:** `POST`  
+**Query parameters:** None  
+**Path variables:** None  
+
+**Request body (JSON):**
+
+```json
+{
+  "token": "fcm_device_token_here"
+}
+```
+
+| Field   | Type   | Required | Description |
+|---------|--------|----------|-------------|
+| `token` | string | Yes      | FCM device token from the mobile app. |
+
+**Response (200):**
+
+```json
+{
+  "status": "success"
+}
+```
+
+**Errors:**
+
+- 400: Missing or empty `token`. Response body: `{ "error": "Missing or empty token" }`.
+
+**Note:** The token is persisted to `mobile_preferences.json` under the server's storage path. No server restart is required; the backend uses this token for FCM push when mobile notifications are enabled.
+
+---
+
+## 7. Unread count
+
+### 7.1 Get unread event count
+
+**Endpoint path:** `/api/events/unread_count`  
+**HTTP method:** `GET`  
+**Query parameters:** None  
+**Path variables:** None  
+**Request body:** None  
+
+**Response (200):**
+
+```json
+{
+  "unread_count": 12
+}
+```
+
+| Field          | Type   | Description |
+|----------------|--------|-------------|
+| `unread_count` | number | Count of event folders that do not have a `.viewed` file. Result is cached for 5 seconds to reduce disk I/O when the app polls frequently. |
+
+---
+
+## 8. Snooze
+
+Per-camera snooze to mute notifications or AI processing until an expiration time. State is in-memory; expired snoozes are removed on read.
+
+### 8.1 Set snooze
+
+**Endpoint path:** `/api/snooze/<camera>`  
+**HTTP method:** `POST`  
+**Query parameters:** None  
+**Path variables:**
+
+| Name     | Description |
+|----------|-------------|
+| `camera` | Camera name to snooze (e.g. `front_door`). |
+
+**Request body (JSON):**
+
+```json
+{
+  "duration_minutes": 60,
+  "snooze_notifications": true,
+  "snooze_ai": true
+}
+```
+
+| Field                 | Type    | Required | Description |
+|-----------------------|---------|----------|-------------|
+| `duration_minutes`    | integer | Yes      | Minutes until snooze expires; must be positive. |
+| `snooze_notifications`| boolean | No       | If true, mute notifications for this camera; default true. |
+| `snooze_ai`           | boolean | No       | If true, skip AI processing for this camera; default true. |
+
+**App note:** The Android app defaults both fields to **false** in the Snooze UI so that a quick "Snooze" does not mute notifications unless the user explicitly turns "Notification Snooze" on.
+
+**Response (200):**
+
+```json
+{
+  "expiration_time": 1739123456.0,
+  "camera": "front_door",
+  "snooze_notifications": true,
+  "snooze_ai": true
+}
+```
+
+| Field                 | Type   | Description |
+|-----------------------|--------|-------------|
+| `expiration_time`     | number | Unix timestamp when the snooze expires. |
+| `camera`              | string | Sanitized camera name. |
+| `snooze_notifications`| boolean| Whether notifications are snoozed. |
+| `snooze_ai`           | boolean| Whether AI is snoozed. |
+
+**Errors:**
+
+- 400: Missing or invalid JSON body; or `duration_minutes` missing, not an integer, or not positive. Response body: `{ "error": "string" }`.
+
+---
+
+### 8.2 List active snoozes
+
+**Endpoint path:** `/api/snooze`  
+**HTTP method:** `GET`  
+**Query parameters:** None  
+**Path variables:** None  
+**Request body:** None  
+
+**Response (200):**
+
+```json
+{
+  "front_door": {
+    "expiration_time": 1739123456.0,
+    "snooze_notifications": true,
+    "snooze_ai": true
+  }
+}
+```
+
+Object maps camera name to `{ expiration_time, snooze_notifications, snooze_ai }`. Expired snoozes are omitted.
+
+---
+
+### 8.3 Clear snooze
+
+**Endpoint path:** `/api/snooze/<camera>`  
+**HTTP method:** `DELETE`  
+**Query parameters:** None  
+**Path variables:** `camera` — camera name to clear.  
+**Request body:** None  
+
+**Response (200):** `{ "status": "success" }`  
+
+Idempotent: returns success even if the camera was not snoozed.
+
+---
+
+## 9. FCM data payload
+
+The backend sends **data-only** FCM messages to the registered device. The Android app reads `RemoteMessage.getData()` as `Map<String, String>`. The following keys define the contract between server and mobile; both sides must stay in sync.
+
+| Key | Type | Description |
+|-----|------|--------------|
+| `ce_id` | string | Consolidated event ID. Used for deterministic notification slotting; if missing, the app generates a fallback ID so the alert is not lost. |
+| `phase` | string | One of: `NEW`, `SNAPSHOT_READY`, `CLIP_READY`, `DISCARDED`. Drives which notification (or cancel) is shown. |
+| `clear_notification` | string | `"true"` or `"false"`. If true (or phase is `DISCARDED`), the app cancels the notification for this `ce_id`. |
+| `threat_level` | string | Integer as string: `"0"`, `"1"`, `"2"` (0=normal, 1=suspicious, 2=critical). |
+| `camera` | string | Camera name (e.g. for subtitle or "Snapshot: camera"). |
+| `live_frame_proxy` | string | Path for live frame (e.g. `/api/cameras/{camera}/latest.jpg`). Used in phase `NEW`. |
+| `hosted_snapshot` | string | Path to cropped snapshot (e.g. `/files/events/ce_id/camera/snapshot.jpg`). Used in `SNAPSHOT_READY`. |
+| `notification_gif` or `notification.gif` | string | Path to teaser GIF/image. Used in `CLIP_READY`; app uses first frame as large icon. |
+| `title` | string | AI-generated title. Used in `CLIP_READY`. |
+| `description` | string | AI-generated description. Used in `CLIP_READY`. |
+| `hosted_clip` | string | Path to clip for "Play" action. Used in `CLIP_READY`; app passes to MainActivity via intent extra. |
+
+Full media URLs are built on the client as `{baseUrl}{path}` (see §2.4); the app uses `buildMediaUrl(baseUrl, path)` from `ui.util`.
+
+---
+
+**App usage:** The Android app uses **§7.1** (GET `/api/events/unread_count`) to drive the app icon badge on resume, and **§8** (Snooze: GET/POST/DELETE `/api/snooze`) for the Snooze screen (per-camera snooze with duration presets and Notification/AI toggles).
 
 ---
 

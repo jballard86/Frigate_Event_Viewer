@@ -1,6 +1,5 @@
 package com.example.frigateeventviewer.ui.screens
 
-import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,84 +15,102 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.text.TextStyle
 import com.mikepenz.markdown.compose.LocalMarkdownTypography
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.model.MarkdownTypography
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DailyReviewScreen(
-    viewModel: DailyReviewViewModel = viewModel<DailyReviewViewModel>(
-        factory = DailyReviewViewModelFactory(
-            LocalContext.current.applicationContext as Application
-        )
-    )
+    viewModel: DailyReviewViewModel,
+    currentPage: Int,
+    pageIndex: Int
 ) {
     val state by viewModel.state.collectAsState()
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { viewModel.generateNewReview() },
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                icon = {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = null
-                    )
-                },
-                text = {
-                    Text(
-                        text = "Generate New Report",
-                        maxLines = 1
-                    )
-                }
-            )
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 16.dp)
-        ) {
-            when (val s = state) {
-                is DailyReviewState.Idle,
-                is DailyReviewState.Loading -> {
-                    DailyReviewLoading(
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-                is DailyReviewState.Success -> {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    DailyReviewContent(
-                        markdownText = s.markdownText,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-                is DailyReviewState.Error -> {
-                    DailyReviewError(
-                        message = s.message,
-                        onRetry = { viewModel.fetchDailyReview() },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
+    LaunchedEffect(lifecycle, currentPage, pageIndex) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            if (currentPage == pageIndex) {
+                viewModel.refresh()
             }
         }
+    }
+
+    PullToRefreshBox(
+        isRefreshing = state is DailyReviewState.Loading,
+        onRefresh = { viewModel.refresh() },
+        modifier = Modifier.fillMaxSize()
+    ) {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            floatingActionButton = {
+                ExtendedFloatingActionButton(
+                    onClick = { viewModel.generateNewReview() },
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = "Generate New Report",
+                            maxLines = 1
+                        )
+                    }
+                )
+            }
+        ) { innerPadding ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                        .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 16.dp)
+                ) {
+                    when (val s = state) {
+                        is DailyReviewState.Idle,
+                        is DailyReviewState.Loading -> {
+                            DailyReviewLoading(
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        is DailyReviewState.Success -> {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            DailyReviewContent(
+                                markdownText = s.markdownText,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        is DailyReviewState.Error -> {
+                            DailyReviewError(
+                                message = s.message,
+                                onRetry = { viewModel.fetchDailyReview() },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                }
+            }
     }
 }
 

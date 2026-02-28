@@ -17,11 +17,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -34,9 +36,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -49,6 +53,8 @@ import androidx.media3.ui.PlayerView
 import com.example.frigateeventviewer.data.model.Event
 import com.example.frigateeventviewer.ui.util.buildMediaUrl
 import com.example.frigateeventviewer.ui.util.SwipeBackBox
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -58,6 +64,7 @@ import java.time.format.DateTimeFormatter
 fun EventDetailScreen(
     selectedEvent: Event?,
     onBack: () -> Unit,
+    onEventActionCompleted: (markedReviewedEventId: String?, deletedEventId: String?) -> Unit = { _, _ -> },
     viewModel: EventDetailViewModel = viewModel<EventDetailViewModel>(
         factory = EventDetailViewModelFactory(
             LocalContext.current.applicationContext as android.app.Application
@@ -69,16 +76,24 @@ fun EventDetailScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(operationState) {
-        when (val state = operationState) {
-            is EventDetailOperationState.Success -> when (state.action) {
-                EventDetailAction.DELETE, EventDetailAction.KEEP -> onBack()
+        when (val opState = operationState) {
+            is EventDetailOperationState.Success -> when (opState.action) {
+                EventDetailAction.DELETE -> {
+                    onEventActionCompleted(null, selectedEvent?.event_id)
+                    onBack()
+                }
+                EventDetailAction.KEEP -> {
+                    onEventActionCompleted(null, null)
+                    onBack()
+                }
                 EventDetailAction.MARK_VIEWED -> {
+                    onEventActionCompleted(selectedEvent?.event_id, null)
                     snackbarHostState.showSnackbar("Marked as reviewed")
                     viewModel.resetOperationState()
                 }
             }
             is EventDetailOperationState.Error -> {
-                snackbarHostState.showSnackbar(state.message)
+                snackbarHostState.showSnackbar(opState.message)
                 viewModel.resetOperationState()
             }
             else -> {}
@@ -99,7 +114,7 @@ fun EventDetailScreen(
                 }
             )
         },
-        snackbarHost = { androidx.compose.material3.SnackbarHost(snackbarHostState) }
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
         SwipeBackBox(
             enabled = true,
@@ -169,7 +184,25 @@ private fun EventVideoSection(
         ?: event.hosted_clips.firstOrNull()?.url
     val clipUrl = buildMediaUrl(baseUrl, clipPath)
 
-        if (clipUrl == null) {
+    // Placeholder: same source as events tab (hosted_snapshot else hosted_clip) when no clip yet.
+    val placeholderPath = when {
+        !event.hosted_snapshot.isNullOrBlank() -> event.hosted_snapshot
+        else -> event.hosted_clip?.takeIf { it.isNotBlank() } ?: event.hosted_clips.firstOrNull()?.url
+    }
+    val placeholderUrl = buildMediaUrl(baseUrl, placeholderPath)
+
+    if (clipUrl == null) {
+        if (!placeholderUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = ImageRequest.Builder(context).data(placeholderUrl).build(),
+                contentDescription = "Event snapshot",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(12.dp)),
+                contentScale = ContentScale.Crop
+            )
+        } else {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -183,13 +216,14 @@ private fun EventVideoSection(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            return
         }
+        return
+    }
 
     val player = remember(event.camera, event.subdir, clipPath) {
         buildMediaUrl(baseUrl, clipPath)?.let { url ->
             ExoPlayer.Builder(context).build().apply {
-                setMediaItem(MediaItem.fromUri(Uri.parse(url)))
+                setMediaItem(MediaItem.fromUri(url.toUri()))
                 prepare()
                 repeatMode = Player.REPEAT_MODE_OFF
                 playWhenReady = false
@@ -259,7 +293,7 @@ private fun EventActionsSection(
             enabled = !isLoading,
             modifier = Modifier.weight(1f).height(40.dp),
             shape = actionShape,
-            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+            colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.error
             )
         ) {
@@ -270,7 +304,7 @@ private fun EventActionsSection(
             enabled = !isLoading,
             modifier = Modifier.weight(1.4f).height(40.dp),
             shape = actionShape,
-            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+            colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary
             )
         ) {
@@ -281,7 +315,7 @@ private fun EventActionsSection(
             enabled = !isLoading && !saved,
             modifier = Modifier.weight(1f).height(40.dp),
             shape = actionShape,
-            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+            colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.tertiary
             )
         ) {

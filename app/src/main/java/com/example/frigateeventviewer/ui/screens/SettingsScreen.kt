@@ -19,6 +19,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -47,6 +48,7 @@ fun SettingsScreen(
 ) {
     val urlInput by viewModel.urlInput.collectAsState()
     val connectionTestState by viewModel.connectionTestState.collectAsState()
+    val landscapeTabIconAlpha by viewModel.landscapeTabIconAlpha.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(connectionTestState) {
@@ -134,6 +136,17 @@ fun SettingsScreen(
                 Text("Test connection")
             }
         }
+        Text(
+            text = "Landscape tab bar icon transparency",
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Slider(
+            value = landscapeTabIconAlpha,
+            onValueChange = { viewModel.setLandscapeTabIconAlpha(it) },
+            valueRange = 0f..1f,
+            modifier = Modifier.fillMaxWidth()
+        )
         }
         }
     }

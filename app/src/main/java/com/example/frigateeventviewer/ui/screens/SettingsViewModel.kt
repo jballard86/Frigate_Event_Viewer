@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.frigateeventviewer.data.api.ApiClient
 import com.example.frigateeventviewer.data.preferences.SettingsPreferences
+import com.example.frigateeventviewer.data.push.FcmTokenManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -49,6 +50,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _connectionTestState = MutableStateFlow<ConnectionTestState>(ConnectionTestState.Idle)
     val connectionTestState: StateFlow<ConnectionTestState> = _connectionTestState.asStateFlow()
 
+    /** Landscape tab bar icon alpha (0f..1f). Default 0.5f. */
+    val landscapeTabIconAlpha: StateFlow<Float> = preferences.landscapeTabIconAlpha
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = 0.5f
+        )
+
     init {
         viewModelScope.launch {
             _urlInput.value = preferences.getBaseUrlOnce()?.trimEnd('/') ?: ""
@@ -68,6 +77,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             val normalized = preferences.saveBaseUrl(_urlInput.value)
             if (normalized != null) {
                 _urlInput.update { normalized.trimEnd('/') }
+                FcmTokenManager(getApplication()).registerIfPossible()
                 onSaved()
             }
         }
@@ -105,6 +115,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun clearConnectionTestState() {
         _connectionTestState.value = ConnectionTestState.Idle
+    }
+
+    /**
+     * Saves the landscape tab bar icon alpha (0f..1f). Used for the "show tab bar" icon in landscape.
+     */
+    fun setLandscapeTabIconAlpha(value: Float) {
+        viewModelScope.launch {
+            preferences.saveLandscapeTabIconAlpha(value)
+        }
     }
 }
 
