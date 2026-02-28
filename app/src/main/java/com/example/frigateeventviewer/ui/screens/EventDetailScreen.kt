@@ -17,11 +17,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -38,6 +40,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -111,7 +114,7 @@ fun EventDetailScreen(
                 }
             )
         },
-        snackbarHost = { androidx.compose.material3.SnackbarHost(snackbarHostState) }
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
         SwipeBackBox(
             enabled = true,
@@ -220,7 +223,7 @@ private fun EventVideoSection(
     val player = remember(event.camera, event.subdir, clipPath) {
         buildMediaUrl(baseUrl, clipPath)?.let { url ->
             ExoPlayer.Builder(context).build().apply {
-                setMediaItem(MediaItem.fromUri(Uri.parse(url)))
+                setMediaItem(MediaItem.fromUri(url.toUri()))
                 prepare()
                 repeatMode = Player.REPEAT_MODE_OFF
                 playWhenReady = false
@@ -290,7 +293,7 @@ private fun EventActionsSection(
             enabled = !isLoading,
             modifier = Modifier.weight(1f).height(40.dp),
             shape = actionShape,
-            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+            colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.error
             )
         ) {
@@ -301,7 +304,7 @@ private fun EventActionsSection(
             enabled = !isLoading,
             modifier = Modifier.weight(1.4f).height(40.dp),
             shape = actionShape,
-            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+            colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary
             )
         ) {
@@ -312,7 +315,7 @@ private fun EventActionsSection(
             enabled = !isLoading && !saved,
             modifier = Modifier.weight(1f).height(40.dp),
             shape = actionShape,
-            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+            colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.tertiary
             )
         ) {

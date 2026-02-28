@@ -9,6 +9,7 @@ import com.example.frigateeventviewer.data.api.ApiClient
 import com.example.frigateeventviewer.data.model.Event
 import com.example.frigateeventviewer.data.model.EventsResponse
 import com.example.frigateeventviewer.data.preferences.SettingsPreferences
+import com.example.frigateeventviewer.data.push.UnreadState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -70,10 +71,7 @@ class EventsViewModel(
     private val _state = MutableStateFlow<EventsState>(EventsState.Loading(null))
     val state: StateFlow<EventsState> = _state.asStateFlow()
 
-    /** Event IDs the user has marked as reviewed on this device (primary for unreviewed list). */
-    private val _locallyMarkedReviewedEventIds = MutableStateFlow<Set<String>>(emptySet())
-
-    /** Events to display: for Unreviewed, server list minus locally marked reviewed; for Reviewed, server list. */
+    /** Events to display: for Unreviewed, server list minus [UnreadState] locally marked reviewed; for Reviewed, server list. */
     private val _displayedEvents = MutableStateFlow<List<Event>>(emptyList())
     val displayedEvents: StateFlow<List<Event>> = _displayedEvents.asStateFlow()
 
@@ -84,9 +82,14 @@ class EventsViewModel(
     init {
         loadEvents()
         viewModelScope.launch {
+            UnreadState.locallyMarkedReviewedEventIds.collect {
+                updateDisplayedEvents()
+            }
+        }
+        viewModelScope.launch {
             sharedEventViewModel.eventsRefreshRequested.collect { payload ->
                 payload.markedReviewedEventId?.let { id ->
-                    _locallyMarkedReviewedEventIds.value = _locallyMarkedReviewedEventIds.value + id
+                    UnreadState.recordMarkedReviewed(id)
                     // Optimistic: remove from current displayed list
                     val current = (_state.value as? EventsState.Success)?.response
                     if (current != null && _filterMode.value == EventsFilterMode.Unreviewed) {
@@ -97,7 +100,7 @@ class EventsViewModel(
                     updateDisplayedEvents()
                 }
                 payload.deletedEventId?.let { id ->
-                    _locallyMarkedReviewedEventIds.value = _locallyMarkedReviewedEventIds.value - id
+                    UnreadState.recordDeleted(id)
                     updateDisplayedEvents()
                 }
                 loadEvents()
@@ -112,7 +115,7 @@ class EventsViewModel(
             is EventsState.Error -> s.previous
         }
         val events = response?.events ?: emptyList()
-        val localSet = _locallyMarkedReviewedEventIds.value
+        val localSet = UnreadState.locallyMarkedReviewedEventIds.value
         _displayedEvents.value = if (_filterMode.value == EventsFilterMode.Unreviewed) {
             events.filter { it.event_id !in localSet }
         } else {
@@ -200,7 +203,7 @@ class EventsViewModel(
                 val service = ApiClient.createService(baseUrlValue)
                 val response = service.getEvents(filter = "all")
                 val existingIds = response.events.mapTo(mutableSetOf()) { it.event_id }
-                _locallyMarkedReviewedEventIds.value = _locallyMarkedReviewedEventIds.value.filter { it in existingIds }.toSet()
+                UnreadState.pruneToExistingIds(existingIds)
                 updateDisplayedEvents()
             } catch (_: Exception) {
                 // Ignore; watchdog will run again on next refresh

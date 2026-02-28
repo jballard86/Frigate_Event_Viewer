@@ -1,8 +1,6 @@
 package com.example.frigateeventviewer
 
 import android.content.Intent
-import android.content.Context
-import android.app.NotificationManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -14,8 +12,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
-import androidx.core.app.NotificationCompat
+import androidx.core.net.toUri
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.ViewModelProvider
@@ -25,12 +24,12 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.frigateeventviewer.data.api.ApiClient
-import com.example.frigateeventviewer.data.model.Event
 import com.example.frigateeventviewer.data.preferences.SettingsPreferences
-import com.example.frigateeventviewer.data.util.EventMatching
 import com.example.frigateeventviewer.data.push.FcmTokenManager
 import com.example.frigateeventviewer.data.push.FrigateFirebaseMessagingService
-import com.example.frigateeventviewer.data.push.PushConstants
+import com.example.frigateeventviewer.data.push.UnreadBadgeHelper
+import com.example.frigateeventviewer.data.push.UnreadState
+import com.example.frigateeventviewer.data.util.EventMatching
 import com.example.frigateeventviewer.ui.screens.DailyReviewViewModel
 import com.example.frigateeventviewer.ui.screens.DailyReviewViewModelFactory
 import com.example.frigateeventviewer.ui.screens.DeepLinkViewModel
@@ -43,6 +42,7 @@ import com.example.frigateeventviewer.ui.screens.EventNotFoundScreen
 import com.example.frigateeventviewer.ui.screens.SharedEventViewModel
 import com.example.frigateeventviewer.ui.screens.SettingsScreen
 import com.example.frigateeventviewer.ui.screens.MainTabsScreen
+import com.example.frigateeventviewer.ui.screens.MainTabsViewModel
 import com.example.frigateeventviewer.ui.screens.SnoozeScreen
 import com.example.frigateeventviewer.ui.theme.FrigateEventViewerTheme
 import kotlinx.coroutines.Dispatchers
@@ -74,7 +74,7 @@ class MainActivity : ComponentActivity() {
         val ceId = DeepLinkViewModel.parseDeepLinkCeId(uri)
             ?: intent.getStringExtra(FrigateFirebaseMessagingService.EXTRA_CE_ID)?.takeIf { it.isNotBlank() }
         if (ceId != null) {
-            deepLinkViewModel.setFromIntent(uri ?: Uri.parse("buffer://event_detail/$ceId"))
+            deepLinkViewModel.setFromIntent(uri ?: "buffer://event_detail/$ceId".toUri())
         }
     }
 
@@ -84,40 +84,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        updateUnreadBadge()
-    }
-
-    /**
-     * Fetches GET /api/events/unread_count and updates the app icon badge via a silent
-     * notification. The builder's number is set so launchers can show the count; when count is 0 the notification is canceled.
-     */
-    private fun updateUnreadBadge() {
-        lifecycleScope.launch(Dispatchers.IO) {
-            val baseUrl = SettingsPreferences(applicationContext).getBaseUrlOnce()
-            if (baseUrl.isNullOrBlank()) return@launch
-            try {
-                val response = ApiClient.createService(baseUrl).getUnreadCount()
-                val count = response.unread_count
-                withContext(Dispatchers.Main) {
-                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                    if (count <= 0) {
-                        notificationManager.cancel(PushConstants.BADGE_NOTIFICATION_ID)
-                    } else {
-                        val builder = NotificationCompat.Builder(applicationContext, PushConstants.CHANNEL_ID_BADGE)
-                            .setSmallIcon(R.mipmap.ic_launcher)
-                            .setContentTitle("Unreviewed events")
-                            .setContentText(if (count == 1) "1 event" else "$count events")
-                            .setNumber(count)
-                            .setPriority(NotificationCompat.PRIORITY_MIN)
-                            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
-                            .setSilent(true)
-                        notificationManager.notify(PushConstants.BADGE_NOTIFICATION_ID, builder.build())
-                    }
-                }
-            } catch (_: Exception) {
-                // Ignore; badge will update on next resume
-            }
-        }
+        UnreadBadgeHelper.updateFromServer(applicationContext)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -128,6 +95,7 @@ class MainActivity : ComponentActivity() {
             FrigateEventViewerTheme {
                 val navController = rememberNavController()
                 val sharedEventViewModel: SharedEventViewModel = viewModel<SharedEventViewModel>()
+                val mainTabsViewModel: MainTabsViewModel = viewModel()
                 val context = LocalContext.current
                 val resolveTrigger by deepLinkViewModel.resolveTrigger.collectAsState(initial = 0)
 
@@ -208,6 +176,12 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     composable("main_tabs") {
+                        val settingsPrefs = remember(application) {
+                            SettingsPreferences(application)
+                        }
+                        val landscapeTabIconAlpha by settingsPrefs.landscapeTabIconAlpha.collectAsState(
+                            initial = 0.5f
+                        )
                         val dailyReviewViewModel: DailyReviewViewModel =
                             viewModel(factory = DailyReviewViewModelFactory(application))
                         val eventsViewModel: EventsViewModel =
@@ -215,8 +189,10 @@ class MainActivity : ComponentActivity() {
                         MainTabsScreen(
                             navController = navController,
                             sharedEventViewModel = sharedEventViewModel,
+                            mainTabsViewModel = mainTabsViewModel,
                             dailyReviewViewModel = dailyReviewViewModel,
-                            eventsViewModel = eventsViewModel
+                            eventsViewModel = eventsViewModel,
+                            landscapeTabIconAlpha = landscapeTabIconAlpha
                         )
                     }
                     composable(
@@ -252,11 +228,23 @@ class MainActivity : ComponentActivity() {
                                 sharedEventViewModel.selectEvent(null)
                                 navController.popBackStack()
                             },
-                            onEventActionCompleted = { markedReviewedEventId, deletedEventId ->
+                            onEventActionCompleted = { markedReviewedEventId: String?, deletedEventId: String? ->
                                 sharedEventViewModel.requestEventsRefresh(
-                                    markedReviewedEventId = markedReviewedEventId,
-                                    deletedEventId = deletedEventId
+                                    markedReviewedEventId,
+                                    deletedEventId
                                 )
+                                if (markedReviewedEventId != null || deletedEventId != null) {
+                                    lifecycleScope.launch {
+                                        markedReviewedEventId?.let { UnreadState.recordMarkedReviewed(it) }
+                                        deletedEventId?.let { UnreadState.recordDeleted(it) }
+                                        withContext<Unit>(Dispatchers.Main) {
+                                            UnreadBadgeHelper.applyBadge(
+                                                applicationContext,
+                                                UnreadState.currentEffectiveUnreadCount()
+                                            )
+                                        }
+                                    }
+                                }
                             },
                             viewModel = eventDetailViewModel
                         )

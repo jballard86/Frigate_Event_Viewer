@@ -9,6 +9,7 @@ import androidx.core.app.NotificationCompat
 import com.example.frigateeventviewer.R
 import com.example.frigateeventviewer.data.api.ApiClient
 import com.example.frigateeventviewer.data.preferences.SettingsPreferences
+import com.example.frigateeventviewer.data.push.UnreadBadgeHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 
@@ -60,11 +61,17 @@ class NotificationActionReceiver : BroadcastReceiver() {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.cancel(notificationId)
         if (success) {
+            runBlocking { UnreadState.recordMarkedReviewed(ceIdFromPath(eventPath)) }
+            UnreadBadgeHelper.applyBadge(context, UnreadState.currentEffectiveUnreadCount())
             Toast.makeText(context, "Marked reviewed", Toast.LENGTH_SHORT).show()
         } else {
             Toast.makeText(context, "Failed to mark reviewed", Toast.LENGTH_SHORT).show()
         }
     }
+
+    /** Extracts ce_id from event path "events/ce_xxx". */
+    private fun ceIdFromPath(eventPath: String): String =
+        eventPath.removePrefix("events/").ifBlank { eventPath }
 
     private fun handleKeep(
         context: Context,

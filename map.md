@@ -16,6 +16,7 @@
 
 - **`map.md`** — This file. Keep it updated when adding/removing/renaming files or changing data flow.
 - **`run-gradle.ps1`** — Optional PowerShell helper: sets JAVA_HOME from a detected JDK (or from a `local.jdk.path` file in the project root) and runs the Gradle wrapper. Use on Windows when JAVA_HOME is not set (e.g. `.\run-gradle.ps1 test`).
+- **`run-pre-commit.ps1`** — PowerShell script that runs `.\gradlew ktlintFormat` then `.\gradlew test` from the project root. Use before committing when you changed Kotlin or business logic. See §9 for the full command (use Option A on Windows).
 - **`.gitignore`** — Git ignore rules for Android/Gradle builds, IDE metadata, and local environment files.
 - **`docs/`** — Project documentation (e.g. `MOBILE_API_CONTRACT.md`, `UI_MAP.md`). No app source code here.
   - **`UI_MAP.md`** — Compose UI and navigation flow (routes, screens, ViewModels). Keep it updated when adding or changing screens or routes.
@@ -78,14 +79,16 @@ app/src/main/java/com/example/frigateeventviewer/
 │   │   └── FrigateApiService.kt       # Retrofit: getEvents, getCameras, getStats, getStatus, getCurrentDailyReview, generateDailyReview, markViewed, keepEvent, deleteEvent, registerDevice, getSnoozeList, setSnooze, clearSnooze, getUnreadCount
 │   ├── model/                         # DTOs for API responses (Event, EventsResponse, StatsResponse, CamerasResponse, SnoozeRequest, SnoozeResponse, SnoozeEntry, UnreadCountResponse, DailyReviewResponse, etc.)
 │   ├── preferences/
-│   │   └── SettingsPreferences.kt     # DataStore: baseUrl flow, saveBaseUrl, normalizeBaseUrl
+│   │   └── SettingsPreferences.kt     # DataStore: baseUrl flow, saveBaseUrl, normalizeBaseUrl; landscapeTabIconAlpha flow, saveLandscapeTabIconAlpha
 │   ├── push/
-│       ├── PushConstants.kt           # CHANNEL_ID_SECURITY_ALERTS; notificationId(ce_id) for deterministic slotting; used by Application and FrigateFirebaseMessagingService
-│       ├── EventNotification.kt       # FCM payload model (NotificationPhase, EventNotification) and EventNotification.from(data) parser
+│   │       ├── PushConstants.kt           # CHANNEL_ID_SECURITY_ALERTS; notificationId(ce_id) for deterministic slotting; used by Application and FrigateFirebaseMessagingService
+│   │       ├── UnreadState.kt             # Single source of truth: last server unread count + locally marked reviewed IDs; badge and Events list both read from it
+│   │       ├── UnreadBadgeHelper.kt       # Fetches GET unread_count, applies badge from UnreadState; updateFromServer(onResume), applyBadge(after mark reviewed/delete)
+│   │       ├── EventNotification.kt       # FCM payload model (NotificationPhase, EventNotification) and EventNotification.from(data) parser
 │       ├── FcmTokenManager.kt         # FCM token fetch + POST /api/mobile/register via SettingsPreferences baseUrl; registerIfPossible(), registerToken(token) for onNewToken
 │       ├── FrigateFirebaseMessagingService.kt   # FirebaseMessagingService: onNewToken → registerToken; onMessageReceived parses EventNotification; notification image from GET /events snapshot (same as events tab) when available, else FCM paths; handleNew, handleSnapshotReady, handleClipReady
 │       ├── NotificationImageCache.kt  # In-memory LruCache of scaled notification bitmaps by ce_id; 72h TTL; removeForEventPath() called from EventDetailViewModel on delete
-│       └── NotificationActionReceiver.kt       # BroadcastReceiver: MARK_REVIEWED (POST /viewed, cancel notification, Toast), KEEP (POST /keep, update notification "Saved", Toast); exported=false
+│       └── NotificationActionReceiver.kt       # BroadcastReceiver: MARK_REVIEWED (POST /viewed, UnreadState.recordMarkedReviewed, applyBadge, cancel notification, Toast), KEEP (POST /keep, update notification "Saved", Toast); exported=false
 │   └── util/
 │       └── EventMatching.kt           # eventMatchesCeId(event, ceId), findEventByCeId(events, ceId); shared by MainActivity deep link and FrigateFirebaseMessagingService notification image
 └── ui/
@@ -95,8 +98,9 @@ app/src/main/java/com/example/frigateeventviewer/
     │   ├── DeepLinkViewModel.kt       # Pending deep-link ce_id and resolve trigger; used by MainActivity for buffer://event_detail/{ce_id}
     │   ├── EventDetailScreen.kt       # Event detail: video (Media3) or snapshot placeholder when no clip; actions, metadata + EventDetailViewModel/Factory
     │   ├── EventNotFoundScreen.kt     # Shown when deep link cannot resolve to an event; Refresh retries resolution
-    │   ├── EventsScreen.kt            # Events list: two modes (Reviewed/Unreviewed), full-width toggle; dynamic title; local set primary for status; watchdog prune
-    │   ├── MainTabsScreen.kt          # HorizontalPager + bottom navigation hosting Dashboard/Events/DailyReview; header title from EventsViewModel when Events tab; Snooze (Dashboard only) + Settings
+    │   ├── EventsScreen.kt            # Events list: two modes (Reviewed/Unreviewed), full-width toggle; dynamic title; filters by UnreadState.locallyMarkedReviewedEventIds; watchdog prune via UnreadState
+    │   ├── MainTabsScreen.kt          # HorizontalPager + bottom navigation hosting Dashboard/Events/DailyReview; header title from EventsViewModel when Events tab; Snooze (Dashboard only) + Settings; tab index from MainTabsViewModel (SavedStateHandle) for rotation; landscape: bottom bar hidden by default, bottom-right icon to reveal (alpha from SettingsPreferences)
+    │   ├── MainTabsViewModel.kt       # Activity-scoped: selectedTabIndex in SavedStateHandle so main-tabs page survives configuration change
     │   ├── SharedEventViewModel.kt    # Activity-scoped: selectedEvent for event_detail; requestEventsRefresh(markedReviewedEventId?, deletedEventId?) for events list + local designation
     │   ├── SettingsScreen.kt          # Server URL input + SettingsViewModel/Factory
     │   ├── SnoozeScreen.kt            # Per-camera snooze: presets 30m/1h/2h, AI vs Notification toggles, camera list with Snooze/Clear
@@ -135,7 +139,7 @@ app/src/main/java/com/example/frigateeventviewer/
    - The event selected for the detail screen is held in `SharedEventViewModel.selectedEvent` (activity-scoped).
    - EventsScreen sets it via `selectEvent(event)` when the user taps an event card, then navigates to `"event_detail"`.
    - When the user leaves the detail screen (back), MainActivity calls `selectEvent(null)` so the app does not hold the event in memory longer than needed.
-   - When the user completes an action on EventDetailScreen (Mark Reviewed, Keep, or Delete), MainActivity invokes `onEventActionCompleted(markedReviewedEventId, deletedEventId)`, which calls `SharedEventViewModel.requestEventsRefresh(markedReviewedEventId, deletedEventId)`. EventsViewModel subscribes to `eventsRefreshRequested`, updates local designation (add/remove event id), and refetches the events list so the UI stays in sync.
+   - When the user completes an action on EventDetailScreen (Mark Reviewed, Keep, or Delete), MainActivity invokes `onEventActionCompleted(markedReviewedEventId, deletedEventId)`, which calls `SharedEventViewModel.requestEventsRefresh(markedReviewedEventId, deletedEventId)`. EventsViewModel subscribes to `eventsRefreshRequested`, records in [UnreadState](app/src/main/java/com/example/frigateeventviewer/data/push/UnreadState.kt) (mark reviewed / delete), and refetches the events list so the UI stays in sync. MainActivity also updates the app icon badge via [UnreadBadgeHelper.applyBadge](app/src/main/java/com/example/frigateeventviewer/data/push/UnreadBadgeHelper.kt) so the count updates immediately.
 
 4. **Media URLs**
    - API returns paths (e.g. `hosted_snapshot`). Full URL = `{baseUrl}{path}`.
@@ -156,13 +160,13 @@ app/src/main/java/com/example/frigateeventviewer/
    - `android:usesCleartextTraffic="true"` on `<application>` for local HTTP backends. FCM service is declared with `com.google.firebase.MESSAGING_EVENT` so FCM can deliver messages and invoke `onNewToken`.
 
 10. **Presence and badge**
-   - On [MainActivity](app/src/main/java/com/example/frigateeventviewer/MainActivity.kt) `onResume()`, the app calls GET /api/events/unread_count (see [FrigateApiService.getUnreadCount](app/src/main/java/com/example/frigateeventviewer/data/api/FrigateApiService.kt)). The count is used to update the app icon badge: a silent, low-priority notification (channel [PushConstants.CHANNEL_ID_BADGE](app/src/main/java/com/example/frigateeventviewer/data/push/PushConstants.kt)) is posted with `NotificationCompat.setNumber(count)` so launchers (e.g. Pixel, Samsung) show the numeric badge. When count is 0 the notification is canceled so the badge clears.
+   - The app icon badge (unreviewed-events count) and the events list share a single source of truth: [UnreadState](app/src/main/java/com/example/frigateeventviewer/data/push/UnreadState.kt) (last server unread count + locally marked reviewed event IDs). [UnreadBadgeHelper](app/src/main/java/com/example/frigateeventviewer/data/push/UnreadBadgeHelper.kt) fetches GET /api/events/unread_count on MainActivity `onResume()`, records the count in UnreadState, and applies the silent badge notification (channel [PushConstants.CHANNEL_ID_BADGE](app/src/main/java/com/example/frigateeventviewer/data/push/PushConstants.kt)); when the user marks an event as reviewed or deletes it (in-app or via notification action), callers record in UnreadState and call `UnreadBadgeHelper.applyBadge(context, UnreadState.currentEffectiveUnreadCount())` so the badge updates immediately without waiting for the next resume.
 
 ---
 
 ## 6. Navigation
 
-Navigation (routes, start destination, launch decision, bottom bar) is documented in `docs/UI_MAP.md`. Keep that document updated when adding or changing screens or routes. The Events screen has two filter states (Reviewed / Unreviewed) and a dynamic title per UI_MAP.
+Navigation (routes, start destination, launch decision, bottom bar) is documented in `docs/UI_MAP.md`. Keep that document updated when adding or changing screens or routes. The Events screen has two filter states (Reviewed / Unreviewed) and a dynamic title per UI_MAP. Tab selection is preserved across configuration changes (e.g. rotation) via **MainTabsViewModel** (activity-scoped) and **SavedStateHandle**; the selected tab index is stored in saved state, so it survives Activity recreation regardless of NavHost. In landscape the bottom tab bar is hidden by default, with an optional semi-transparent icon at bottom-right (opacity adjustable in Settings via `SettingsPreferences.landscapeTabIconAlpha`) to reveal it; the value may be hardcoded after testing.
 
 **Deep link:** MainActivity handles `buffer://event_detail/{ce_id}`. It also handles notification taps: when the user taps a notification body or "Play", the app is launched with intent extra `EXTRA_CE_ID` (from [FrigateFirebaseMessagingService](app/src/main/java/com/example/frigateeventviewer/data/push/FrigateFirebaseMessagingService.kt)); MainActivity treats this like a deep link by building `buffer://event_detail/{ce_id}` and running the same resolution. It parses the URI (or ce_id from extra), fetches events (GET /events?filter=all), finds the event via [EventMatching.findEventByCeId](app/src/main/java/com/example/frigateeventviewer/data/util/EventMatching.kt) (matches both full ce_id and folder name without `ce_` prefix), sets `SharedEventViewModel.selectedEvent` and navigates to `event_detail`. If not found, navigates to `event_not_found/{ce_id}` which shows "Event not found" and a Refresh button that retries resolution. `onNewIntent` updates the intent and triggers the same resolution so opening a second link or tapping another notification works.
 
@@ -185,8 +189,50 @@ Navigation (routes, start destination, launch decision, bottom bar) is documente
 
 ## 9. Testing & Linting
 
-- **ktlint:** We use ktlint for Kotlin formatting. Run `./gradlew ktlintCheck` and `./gradlew ktlintFormat`. Running `ktlintFormat` before completing a task that touches Kotlin is part of the mandatory workflow (see root `.cursorrules`).
-- **Unit tests:** We use **JUnit** for unit tests and **MockK** / **kotlinx-coroutines-test** where needed for mocks and coroutines. Run `./gradlew test` before completing work that touches business logic, ViewModels, or networking (see `.cursorrules`).
+- **ktlint:** We use ktlint for Kotlin formatting and style. Run `ktlintFormat` (fix) then `ktlintCheck` (fail on any remaining violations, e.g. unused imports). Running these before completing a task that touches Kotlin is part of the mandatory workflow (see root `.cursorrules`).
+- **Unit tests:** We use **JUnit** for unit tests and **MockK** / **kotlinx-coroutines-test** where needed. Run `.\gradlew test` before completing work that touches business logic, ViewModels, or networking (see `.cursorrules`).
+
+**Pre-commit script (recommended).** One script runs format, style check, compile, and unit tests. On Windows, execution policy often blocks unsigned scripts, so **use Option A** (bypass) as the standard command:
+
+**Option A (recommended — works without changing execution policy):**
+
+```powershell
+cd "z:\Code Projects\Frigate Event Viewer"; powershell -ExecutionPolicy Bypass -File .\run-pre-commit.ps1
+```
+
+If you have already allowed local scripts (`Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`), you can use:
+
+```powershell
+cd "z:\Code Projects\Frigate Event Viewer"; .\run-pre-commit.ps1
+```
+
+The script (`run-pre-commit.ps1` in the project root) changes to the project directory, runs `.\gradlew ktlintFormat`, then `.\gradlew ktlintCheck`, then `.\gradlew compileDebugKotlin`, then `.\gradlew test`, and exits with failure if any step fails.
+
+**What the script runs (one script fits all for pre-commit):**
+
+- **ktlintFormat** — Formats all Kotlin source (fixes style; no separate per-module step).
+- **ktlintCheck** — Fails the build if any ktlint rule is still violated (e.g. unused imports). Run after format so only unfixable or remaining violations fail.
+- **compileDebugKotlin** — Compiles main Kotlin code; fails on compile errors (unresolved reference, type inference, etc.) before tests run.
+- **test** — Runs **all** unit tests in `app/src/test/`. Gradle discovers every test class there; there is no separate list. Current unit test classes: `EventNotificationTest`, `SharedEventViewModelTest`, `ExampleUnitTest`, `EventDetailViewModelTest`, `MediaUrlTest`.
+
+Instrumented tests in `app/src/androidTest/` are **not** run by this script (they require a device or emulator). Run them with `.\gradlew connectedDebugAndroidTest` when needed.
+
+You can also run the steps manually:
+
+```powershell
+cd "z:\Code Projects\Frigate Event Viewer"
+.\gradlew ktlintFormat
+.\gradlew ktlintCheck
+.\gradlew compileDebugKotlin
+.\gradlew test
+```
+
+- **ktlintFormat** — Fix Kotlin style; run before committing when you changed Kotlin files.
+- **ktlintCheck** — Verify no style violations remain; fails build on e.g. unused imports.
+- **compileDebugKotlin** — Compile main code; fails on unresolved reference, type inference, etc.
+- **test** — Run unit tests; run before committing when you changed business logic, ViewModels, or networking.
+
+Optional: If JAVA_HOME is not set, use `.\run-gradle.ps1` with the same task names when that helper exists.
 
 
 ---
