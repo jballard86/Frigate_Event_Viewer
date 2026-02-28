@@ -31,6 +31,10 @@ data class EventNotification(
     val live_frame_proxy: String?,
     val hosted_snapshot: String?,
     val notification_gif: String?,
+    /** Cropped snapshot path sent by backend in FCM; only media key currently sent. Used as fallback for notification image when phase-specific keys are absent. */
+    val cropped_image_url: String?,
+    /** Full URL to the notification image (e.g. Firebase Storage or other public URL). When set, app loads from this first with no delay; avoids VPN/private-network issues on cellular. */
+    val image_url: String?,
     val title: String?,
     val description: String?,
     val hosted_clip: String?
@@ -45,6 +49,8 @@ data class EventNotification(
         private const val KEY_HOSTED_SNAPSHOT = "hosted_snapshot"
         private const val KEY_NOTIFICATION_GIF = "notification_gif"
         private const val KEY_NOTIFICATION_GIF_ALT = "notification.gif"
+        private const val KEY_CROPPED_IMAGE_URL = "cropped_image_url"
+        private const val KEY_IMAGE_URL = "image_url"
         private const val KEY_TITLE = "title"
         private const val KEY_DESCRIPTION = "description"
         private const val KEY_HOSTED_CLIP = "hosted_clip"
@@ -66,6 +72,8 @@ data class EventNotification(
             val hostedSnapshot = data[KEY_HOSTED_SNAPSHOT].takeIf { !it.isNullOrBlank() }
             val notificationGif = data[KEY_NOTIFICATION_GIF].takeIf { !it.isNullOrBlank() }
                 ?: data[KEY_NOTIFICATION_GIF_ALT].takeIf { !it.isNullOrBlank() }
+            val croppedImageUrl = data[KEY_CROPPED_IMAGE_URL].takeIf { !it.isNullOrBlank() }
+            val imageUrl = data[KEY_IMAGE_URL].takeIf { !it.isNullOrBlank() }
             val title = data[KEY_TITLE].takeIf { !it.isNullOrBlank() }
             val description = data[KEY_DESCRIPTION].takeIf { !it.isNullOrBlank() }
             val hostedClip = data[KEY_HOSTED_CLIP].takeIf { !it.isNullOrBlank() }
@@ -79,6 +87,8 @@ data class EventNotification(
                 live_frame_proxy = liveFrameProxy,
                 hosted_snapshot = hostedSnapshot,
                 notification_gif = notificationGif,
+                cropped_image_url = croppedImageUrl,
+                image_url = imageUrl,
                 title = title,
                 description = description,
                 hosted_clip = hostedClip

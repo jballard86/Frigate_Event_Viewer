@@ -41,6 +41,34 @@ class EventNotificationTest {
         assertEquals("Person at door", result.title)
         assertEquals("Someone approached.", result.description)
         assertEquals("/files/events/ce_123/clip.mp4", result.hosted_clip)
+        assertEquals(null, result.cropped_image_url)
+        assertEquals(null, result.image_url)
+    }
+
+    @Test
+    fun from_imageUrl_parsesWhenPresent() {
+        val data = mapOf(
+            "ce_id" to "x",
+            "phase" to "NEW",
+            "image_url" to "https://storage.googleapis.com/bucket/snapshot.jpg"
+        )
+
+        val result = EventNotification.from(data)
+
+        assertEquals("https://storage.googleapis.com/bucket/snapshot.jpg", result.image_url)
+    }
+
+    @Test
+    fun from_croppedImageUrl_parsesWhenPresent() {
+        val data = mapOf(
+            "ce_id" to "x",
+            "phase" to "CLIP_READY",
+            "cropped_image_url" to "/files/events/1772252671_bf1c91a6/front_door/snapshot_cropped.jpg"
+        )
+
+        val result = EventNotification.from(data)
+
+        assertEquals("/files/events/1772252671_bf1c91a6/front_door/snapshot_cropped.jpg", result.cropped_image_url)
     }
 
     @Test

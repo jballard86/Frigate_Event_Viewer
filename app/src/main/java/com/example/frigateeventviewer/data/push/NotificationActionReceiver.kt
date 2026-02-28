@@ -29,7 +29,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 return
             }
         val notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, 0)
-        val baseUrl = SettingsPreferences(context).getBaseUrlOnce()
+        val baseUrl = runBlocking { SettingsPreferences(context).getBaseUrlOnce() }
         if (baseUrl.isNullOrBlank()) {
             Toast.makeText(context, "Not configured", Toast.LENGTH_SHORT).show()
             return

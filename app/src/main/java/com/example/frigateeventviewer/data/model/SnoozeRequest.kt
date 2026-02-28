@@ -5,6 +5,6 @@ package com.example.frigateeventviewer.data.model
  */
 data class SnoozeRequest(
     val duration_minutes: Int,
-    val snooze_notifications: Boolean = true,
-    val snooze_ai: Boolean = true
+    val snooze_notifications: Boolean = false,
+    val snooze_ai: Boolean = false
 )

@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.frigateeventviewer.data.api.ApiClient
 import com.example.frigateeventviewer.data.preferences.SettingsPreferences
+import com.example.frigateeventviewer.data.push.NotificationImageCache
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -77,7 +78,7 @@ class EventDetailViewModel(application: Application) : AndroidViewModel(applicat
      * Deletes the event folder. On success, UI should pop back.
      */
     fun deleteEvent(eventPath: String) {
-        performAction(EventDetailAction.DELETE) { baseUrlValue ->
+        performAction(EventDetailAction.DELETE, eventPath) { baseUrlValue ->
             ApiClient.createService(baseUrlValue).deleteEvent(eventPath)
         }
     }
@@ -87,7 +88,7 @@ class EventDetailViewModel(application: Application) : AndroidViewModel(applicat
         _operationState.value = EventDetailOperationState.Idle
     }
 
-    private fun performAction(action: EventDetailAction, block: suspend (String) -> Unit) {
+    private fun performAction(action: EventDetailAction, eventPathForCache: String? = null, block: suspend (String) -> Unit) {
         viewModelScope.launch {
             _operationState.value = EventDetailOperationState.Loading
             val baseUrlValue = preferences.getBaseUrlOnce()
@@ -97,6 +98,9 @@ class EventDetailViewModel(application: Application) : AndroidViewModel(applicat
             }
             try {
                 block(baseUrlValue)
+                if (action == EventDetailAction.DELETE && eventPathForCache != null) {
+                    NotificationImageCache.removeForEventPath(eventPathForCache)
+                }
                 _operationState.value = EventDetailOperationState.Success(action)
             } catch (e: Exception) {
                 _operationState.value = EventDetailOperationState.Error(

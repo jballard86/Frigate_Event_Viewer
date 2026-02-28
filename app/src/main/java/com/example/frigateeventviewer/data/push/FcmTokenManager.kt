@@ -48,10 +48,10 @@ class FcmTokenManager(private val context: Context) {
             .addOnCompleteListener { task ->
                 if (task.isSuccessful) {
                     val token = task.result
-                    if (!token.isNullOrBlank()) cont.resume(token)
-                    else cont.resume(null)
+                    if (!token.isNullOrBlank()) cont.resume(token) { _ -> }
+                    else cont.resume(null) { _ -> }
                 } else {
-                    cont.resume(null)
+                    cont.resume(null) { _ -> }
                 }
             }
     }

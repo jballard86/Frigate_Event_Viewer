@@ -49,12 +49,12 @@ class SnoozeViewModel(application: Application) : AndroidViewModel(application) 
     val selectedDurationMinutes: Int
         get() = SNOOZE_PRESETS.getOrElse(_selectedPresetIndex.value) { 60 }
 
-    /** Mute notifications for this camera; default true. */
-    private val _snoozeNotifications = MutableStateFlow(true)
+    /** Mute notifications for this camera; default false so a quick Snooze does not mute unless user turns on. */
+    private val _snoozeNotifications = MutableStateFlow(false)
     val snoozeNotifications: StateFlow<Boolean> = _snoozeNotifications.asStateFlow()
 
-    /** Skip AI processing for this camera; default true. */
-    private val _snoozeAi = MutableStateFlow(true)
+    /** Skip AI processing for this camera; default false. */
+    private val _snoozeAi = MutableStateFlow(false)
     val snoozeAi: StateFlow<Boolean> = _snoozeAi.asStateFlow()
 
     /** Camera currently selected for applying snooze. */

@@ -54,6 +54,9 @@ flowchart TD
     deeplink["buffer://event_detail/ce_id"] --> mainTabs
     deeplink -->|Resolve to event| eventDetail
     deeplink -->|Not found| eventNotFound["EventNotFoundScreen"]
+    notificationTap["Notification tap (EXTRA_CE_ID)"] --> mainTabs
+    notificationTap -->|Same resolution as deep link| eventDetail
+    notificationTap -->|Not found| eventNotFound
     eventNotFound -->|Refresh| eventDetail
     eventNotFound -->|Back| mainTabs
     dashboard -->|Snooze icon| snooze["SnoozeScreen"]
@@ -67,8 +70,8 @@ flowchart TD
 - **First run:** User stays on SettingsScreen until they enter a URL and tap Save (or launch decision already sent them to the tabbed main screen).
 - **After Save:** `onNavigateToDashboard` runs → navigate to `"main_tabs"`, pop `"settings"` inclusive.
 - **Bottom bar + pager:** MainTabsScreen owns a `Scaffold` with a bottom bar and a `HorizontalPager` with three pages: Dashboard, Events, and Daily Review. Tapping Dashboard, Events, or Daily Review animates the pager to the corresponding page; swiping between pages also updates the selected bottom bar item.
-- **Event detail:** From EventsScreen (inside the pager), tapping an event card sets `SharedEventViewModel.selectedEvent` and navigates to `"event_detail"`. EventDetailScreen shows video, actions (Mark Reviewed, Keep, Delete), and metadata. Back (toolbar or system) clears selection and pops to the previous screen.
-- **Deep link:** The app can be opened via `buffer://event_detail/{ce_id}`. MainActivity parses the URI, fetches events (GET /events?filter=all), finds the event by `event_id` or (camera `"events"` and `subdir`), sets the selected event and navigates to `"event_detail"`. If the event is not found, the app navigates to `event_not_found/{ce_id}` which shows "Event not found" and a **Refresh** button that retries the same resolution.
+- **Event detail:** From EventsScreen (inside the pager), tapping an event card sets `SharedEventViewModel.selectedEvent` and navigates to `"event_detail"`. EventDetailScreen shows video (or snapshot placeholder when no clip is ready yet), actions (Mark Reviewed, Keep, Delete), and metadata. Back (toolbar or system) clears selection and pops to the previous screen.
+- **Deep link:** The app can be opened via `buffer://event_detail/{ce_id}` or by tapping a push notification (body or "Play" action). In both cases MainActivity resolves a pending ce_id (from URI or intent extra `EXTRA_CE_ID`), fetches events (GET /events?filter=all), finds the event by `event_id` or (camera `"events"` and `subdir`), sets the selected event and navigates to `"event_detail"`. If the event is not found, the app navigates to `event_not_found/{ce_id}` which shows "Event not found" and a **Refresh** button that retries the same resolution.
 - **Snooze:** From the Dashboard tab, the header shows a Snooze icon that navigates to `"snooze"`. SnoozeScreen lets the user set per-camera snooze with duration presets (30m, 1h, 2h), Notification Snooze and AI Snooze toggles, and a camera list with Snooze/Clear actions. Back returns to main tabs.
 
 ---
@@ -123,10 +126,10 @@ flowchart TD
 ### EventDetailScreen
 
 - **Route:** `"event_detail"`
-- **Purpose:** Plays the event's .mp4 clip (Media3 ExoPlayer), shows actions (Mark Reviewed, Keep, Delete), and metadata (title, scene, camera, date, threat level). User can mark viewed, keep (move to saved), or delete; on Keep or Delete success the screen pops back (path changes / item removed). On any of the three actions, `onEventActionCompleted` is invoked so the events list refreshes (via `SharedEventViewModel.requestEventsRefresh()`). Selection comes from `SharedEventViewModel`; cleared on back.
+- **Purpose:** Plays the event's .mp4 clip (Media3 ExoPlayer), or shows the same snapshot as the events tab (hosted_snapshot / hosted_clip) as a placeholder when no clip is available yet. Shows actions (Mark Reviewed, Keep, Delete), and metadata (title, scene, camera, date, threat level). User can mark viewed, keep (move to saved), or delete; on Keep or Delete success the screen pops back (path changes / item removed). On any of the three actions, `onEventActionCompleted` is invoked so the events list refreshes (via `SharedEventViewModel.requestEventsRefresh()`). Selection comes from `SharedEventViewModel`; cleared on back.
 - **ViewModel:** `EventDetailViewModel` (factory: `EventDetailViewModelFactory`). Also reads `SharedEventViewModel.selectedEvent` (from MainActivity).
-- **States:** `EventDetailOperationState` — `Idle` | `Loading` | `Success(action)` | `Error(message)`. `baseUrl: StateFlow<String?>` for building clip URL.
-- **Data source:** `FrigateApiService.markViewed`, `keepEvent`, `deleteEvent`. Clip URL via `buildMediaUrl(baseUrl, hosted_clip)` or first `hosted_clips[].url`.
+- **States:** `EventDetailOperationState` — `Idle` | `Loading` | `Success(action)` | `Error(message)`. `baseUrl: StateFlow<String?>` for building clip and placeholder URLs.
+- **Data source:** `FrigateApiService.markViewed`, `keepEvent`, `deleteEvent`. Clip URL via `buildMediaUrl(baseUrl, hosted_clip)` or first `hosted_clips[].url`; when no clip, placeholder image from `buildMediaUrl(baseUrl, hosted_snapshot)` or `hosted_clip` (same as events tab).
 
 ---
 
@@ -161,11 +164,11 @@ flowchart TD
 
 - **Location:** `com.example.frigateeventviewer.ui.util.MediaUrl.kt`
 - **Purpose:** Builds the full media URL from the server base URL and an API path (e.g. `hosted_snapshot`, `hosted_clip`). Trims trailing slash from base URL to avoid double slashes. Returns `null` if either argument is null/blank.
-- **Used by:** EventsScreen `EventCard` for thumbnail/clip URLs; EventDetailScreen for clip playback URL.
+- **Used by:** EventsScreen `EventCard` for thumbnail/clip URLs; EventDetailScreen for clip playback URL and snapshot placeholder URL.
 
 ### EventDetailScreen — video and actions
 
-- **Video:** AndroidView wrapping Media3 `PlayerView` and `ExoPlayer`. Clip URL from `buildMediaUrl(baseUrl, event.hosted_clip)` or first `event.hosted_clips[].url`. Player is paused on lifecycle `ON_PAUSE` (so audio does not continue in background) and released in AndroidView `onRelease`.
+- **Video / placeholder:** When a clip is available, AndroidView wraps Media3 `PlayerView` and `ExoPlayer`; clip URL from `buildMediaUrl(baseUrl, event.hosted_clip)` or first `event.hosted_clips[].url`. When no clip is available yet, the same snapshot as the events tab is shown as a placeholder (`hosted_snapshot` or `hosted_clip` via `buildMediaUrl`). Player is paused on lifecycle `ON_PAUSE` and released in AndroidView `onRelease`.
 - **Actions:** Row of three buttons — Mark Reviewed (primary), Keep (tertiary; disabled if `event.saved`), Delete (error). Success(Delete) or Success(Keep) calls `onEventActionCompleted()` then pops back; Success(Mark Reviewed) calls `onEventActionCompleted()` (so the events list refreshes in the background), shows Snackbar, and stays.
 
 ### Coil and video thumbnails

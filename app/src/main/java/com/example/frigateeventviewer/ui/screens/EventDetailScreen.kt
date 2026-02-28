@@ -34,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -49,6 +50,8 @@ import androidx.media3.ui.PlayerView
 import com.example.frigateeventviewer.data.model.Event
 import com.example.frigateeventviewer.ui.util.buildMediaUrl
 import com.example.frigateeventviewer.ui.util.SwipeBackBox
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -174,7 +177,25 @@ private fun EventVideoSection(
         ?: event.hosted_clips.firstOrNull()?.url
     val clipUrl = buildMediaUrl(baseUrl, clipPath)
 
-        if (clipUrl == null) {
+    // Placeholder: same source as events tab (hosted_snapshot else hosted_clip) when no clip yet.
+    val placeholderPath = when {
+        !event.hosted_snapshot.isNullOrBlank() -> event.hosted_snapshot
+        else -> event.hosted_clip?.takeIf { it.isNotBlank() } ?: event.hosted_clips.firstOrNull()?.url
+    }
+    val placeholderUrl = buildMediaUrl(baseUrl, placeholderPath)
+
+    if (clipUrl == null) {
+        if (!placeholderUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = ImageRequest.Builder(context).data(placeholderUrl).build(),
+                contentDescription = "Event snapshot",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(12.dp)),
+                contentScale = ContentScale.Crop
+            )
+        } else {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -188,8 +209,9 @@ private fun EventVideoSection(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            return
         }
+        return
+    }
 
     val player = remember(event.camera, event.subdir, clipPath) {
         buildMediaUrl(baseUrl, clipPath)?.let { url ->

@@ -69,7 +69,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             val normalized = preferences.saveBaseUrl(_urlInput.value)
             if (normalized != null) {
                 _urlInput.update { normalized.trimEnd('/') }
-                FcmTokenManager(application).registerIfPossible()
+                FcmTokenManager(getApplication()).registerIfPossible()
                 onSaved()
             }
         }

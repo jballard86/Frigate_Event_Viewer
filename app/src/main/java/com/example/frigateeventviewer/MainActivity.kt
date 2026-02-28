@@ -1,11 +1,16 @@
 package com.example.frigateeventviewer
 
 import android.content.Intent
+import android.content.Context
+import android.app.NotificationManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -13,14 +18,18 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.frigateeventviewer.data.api.ApiClient
+import com.example.frigateeventviewer.data.model.Event
 import com.example.frigateeventviewer.data.preferences.SettingsPreferences
+import com.example.frigateeventviewer.data.util.EventMatching
 import com.example.frigateeventviewer.data.push.FcmTokenManager
+import com.example.frigateeventviewer.data.push.FrigateFirebaseMessagingService
 import com.example.frigateeventviewer.data.push.PushConstants
 import com.example.frigateeventviewer.ui.screens.DailyReviewViewModel
 import com.example.frigateeventviewer.ui.screens.DailyReviewViewModelFactory
@@ -41,14 +50,34 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
 
+    private val requestNotificationPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        // Permission result; notifications will show or not based on user choice.
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        deepLinkViewModel.setFromIntent(intent.data)
+        applyDeepLinkOrNotificationIntent(intent)
+    }
+
+    /**
+     * Applies pending ce_id from deep link (intent.data) or notification tap (EXTRA_CE_ID).
+     * Triggers resolution so LaunchedEffect(resolveTrigger) can navigate to event_detail.
+     */
+    private fun applyDeepLinkOrNotificationIntent(intent: Intent?) {
+        if (intent == null) return
+        val uri = intent.data
+        val ceId = DeepLinkViewModel.parseDeepLinkCeId(uri)
+            ?: intent.getStringExtra(FrigateFirebaseMessagingService.EXTRA_CE_ID)?.takeIf { it.isNotBlank() }
+        if (ceId != null) {
+            deepLinkViewModel.setFromIntent(uri ?: Uri.parse("buffer://event_detail/$ceId"))
+        }
     }
 
     private val deepLinkViewModel: DeepLinkViewModel by lazy {
-        androidx.lifecycle.ViewModelProvider(this)[DeepLinkViewModel::class.java]
+        ViewModelProvider(this)[DeepLinkViewModel::class.java]
     }
 
     override fun onResume() {
@@ -58,21 +87,21 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Fetches GET /api/events/unread_count and updates the app icon badge via a silent
-     * notification with [NotificationCompat.setNumber]. When count is 0 the notification is cancelled.
+     * notification. The builder's number is set so launchers can show the count; when count is 0 the notification is canceled.
      */
     private fun updateUnreadBadge() {
-        val baseUrl = SettingsPreferences(applicationContext).getBaseUrlOnce()
-        if (baseUrl.isNullOrBlank()) return
         lifecycleScope.launch(Dispatchers.IO) {
+            val baseUrl = SettingsPreferences(applicationContext).getBaseUrlOnce()
+            if (baseUrl.isNullOrBlank()) return@launch
             try {
                 val response = ApiClient.createService(baseUrl).getUnreadCount()
                 val count = response.unread_count
                 withContext(Dispatchers.Main) {
-                    val notificationManager = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                     if (count <= 0) {
                         notificationManager.cancel(PushConstants.BADGE_NOTIFICATION_ID)
                     } else {
-                        val builder = NotificationCompat.Builder(this@MainActivity, PushConstants.CHANNEL_ID_BADGE)
+                        val builder = NotificationCompat.Builder(applicationContext, PushConstants.CHANNEL_ID_BADGE)
                             .setSmallIcon(R.mipmap.ic_launcher)
                             .setContentTitle("Unreviewed events")
                             .setContentText(if (count == 1) "1 event" else "$count events")
@@ -92,21 +121,25 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val activity = this
         setContent {
             FrigateEventViewerTheme {
                 val navController = rememberNavController()
                 val sharedEventViewModel: SharedEventViewModel = viewModel<SharedEventViewModel>()
                 val context = LocalContext.current
                 val resolveTrigger by deepLinkViewModel.resolveTrigger.collectAsState(initial = 0)
-                val pendingCeId by deepLinkViewModel.pendingCeId.collectAsState()
 
                 // Wait one frame so NavHost is composed before any navigate().
                 LaunchedEffect(Unit) {
                     delay(50)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        requestNotificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                    applyDeepLinkOrNotificationIntent(intent)
                     val uri = intent?.data
-                    if (DeepLinkViewModel.parseDeepLinkCeId(uri) != null) {
-                        deepLinkViewModel.setFromIntent(uri)
-                    } else {
+                    val ceIdFromUri = DeepLinkViewModel.parseDeepLinkCeId(uri)
+                    val ceIdFromExtra = intent?.getStringExtra(FrigateFirebaseMessagingService.EXTRA_CE_ID)?.takeIf { it.isNotBlank() }
+                    if (ceIdFromUri == null && ceIdFromExtra == null) {
                         val preferences = SettingsPreferences(context.applicationContext)
                         val baseUrl = preferences.getBaseUrlOnce()
                         if (baseUrl != null) {
@@ -120,7 +153,7 @@ class MainActivity : ComponentActivity() {
 
                 LaunchedEffect(resolveTrigger) {
                     if (resolveTrigger == 0) return@LaunchedEffect
-                    val ceId = deepLinkViewModel.pendingCeId ?: return@LaunchedEffect
+                    val ceId = deepLinkViewModel.pendingCeId.value ?: return@LaunchedEffect
                     delay(50)
                     val preferences = SettingsPreferences(context.applicationContext)
                     val baseUrl = preferences.getBaseUrlOnce()
@@ -132,9 +165,7 @@ class MainActivity : ComponentActivity() {
                         try {
                             val service = ApiClient.createService(baseUrl)
                             val response = service.getEvents("all")
-                            response.events.find { e ->
-                                e.event_id == ceId || (e.camera == "events" && e.subdir == ceId)
-                            }
+                            response.events.find { e -> EventMatching.eventMatchesCeId(e, ceId) }
                         } catch (_: Exception) {
                             null
                         }
@@ -149,7 +180,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                         navController.navigate("event_detail")
-                        setIntent(Intent())
+                        activity.intent = Intent()
                         deepLinkViewModel.clearPending()
                     } else {
                         navController.navigate("main_tabs") {

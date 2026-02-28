@@ -813,6 +813,8 @@ Per-camera snooze to mute notifications or AI processing until an expiration tim
 | `snooze_notifications`| boolean | No       | If true, mute notifications for this camera; default true. |
 | `snooze_ai`           | boolean | No       | If true, skip AI processing for this camera; default true. |
 
+**App note:** The Android app defaults both fields to **false** in the Snooze UI so that a quick "Snooze" does not mute notifications unless the user explicitly turns "Notification Snooze" on.
+
 **Response (200):**
 
 ```json
