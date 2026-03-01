@@ -52,6 +52,7 @@ Do not add new root-level folders (e.g. `lib/`, `core/`) without explicit permis
 | | firebase-messaging | (BOM) |
 | **Media / UI** | Coil Compose | 2.5.0 |
 | | AndroidX Media3 ExoPlayer + UI | 1.2.1 |
+| | AndroidX Media3 ExoPlayer HLS | 1.2.1 |
 | | Multiplatform Markdown Renderer (Android + M3) | 0.24.0 |
 | **Unit tests** | JUnit | 4.13.2 |
 | | MockK | 1.13.9 |
@@ -80,7 +81,7 @@ app/src/main/java/com/example/frigateeventviewer/
 │   │   └── FrigateApiService.kt       # Retrofit: getEvents, getCameras, getStats, getStatus, getCurrentDailyReview, generateDailyReview, markViewed, keepEvent, deleteEvent, registerDevice, getSnoozeList, setSnooze, clearSnooze, getUnreadCount, getGo2RtcStreams
 │   ├── model/                         # DTOs for API responses (Event, EventsResponse, StatsResponse, CamerasResponse, SnoozeRequest, SnoozeResponse, SnoozeEntry, UnreadCountResponse, DailyReviewResponse, etc.)
 │   ├── preferences/
-│   │   └── SettingsPreferences.kt     # DataStore: baseUrl flow, saveBaseUrl, normalizeBaseUrl; frigateIp flow, saveFrigateIp, getFrigateIpOnce; buildFrigateApiBaseUrl (HTTP, port 5000); defaultLiveCamera flow, saveDefaultLiveCamera, getDefaultLiveCameraOnce; landscapeTabIconAlpha flow, saveLandscapeTabIconAlpha
+│   │   └── SettingsPreferences.kt     # DataStore: baseUrl, frigateIp, buildFrigateApiBaseUrl (5000); defaultLiveCamera; landscapeTabIconAlpha
 │   ├── push/
 │   │       ├── PushConstants.kt           # CHANNEL_ID_SECURITY_ALERTS; notificationId(ce_id) for deterministic slotting; used by Application and FrigateFirebaseMessagingService
 │   │       ├── UnreadState.kt             # Single source of truth: last server unread count + locally marked reviewed IDs; badge and Events list both read from it
@@ -100,7 +101,7 @@ app/src/main/java/com/example/frigateeventviewer/
     │   ├── EventDetailScreen.kt       # Event detail: video (Media3) or snapshot placeholder when no clip; actions, metadata + EventDetailViewModel/Factory
     │   ├── EventNotFoundScreen.kt     # Shown when deep link cannot resolve to an event; Refresh retries resolution
     │   ├── EventsScreen.kt            # Events list: two modes (Reviewed/Unreviewed), full-width toggle; dynamic title; filters by UnreadState.locallyMarkedReviewedEventIds; EventsViewModel activity-scoped (MainActivity), filter mode in Activity SavedStateHandle via CreationExtras
-│   ├── LiveScreen.kt              # Live tab: Select Camera dropdown from shared Go2RtcStreamsRepository state, preselects default from Settings when in list; "Coming soon" body; LiveViewModel/Factory
+│   ├── LiveScreen.kt              # Live tab: Select Camera dropdown from shared Go2RtcStreamsRepository state, preselects default from Settings when in list; live video player (stream URL: api/go2rtc/api/stream.mp4 via Frigate proxy 5000 only; 16:9, 12.dp; ExoPlayer with low-latency LoadControl and VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING; Connecting/Loading status; error below player shows exact reason e.g. HTTP 404); LiveViewModel/Factory (activity-scoped, created in MainActivity, passed via MainTabsScreen)
 │   ├── MainTabsScreen.kt          # HorizontalPager + bottom navigation hosting Live/Dashboard/Events/DailyReview; header title from tab; Snooze (Dashboard only) + Settings; tab index from MainTabsViewModel (SavedStateHandle) for rotation; default tab Dashboard (index 1); landscape: bottom bar hidden by default, AnimatedVisibility (expand/shrink) for show/hide; floating drag handle (circle+chevron, zIndex+offset) when bar closed; handle inside bottomBar Column above NavigationBar when bar open (transparent strip); alpha from SettingsPreferences
     │   ├── MainTabsViewModel.kt       # Activity-scoped: selectedTabIndex in SavedStateHandle so main-tabs page survives configuration change
     │   ├── SharedEventViewModel.kt    # Activity-scoped: selectedEvent for event_detail; requestEventsRefresh(markedReviewedEventId?, deletedEventId?) for events list + local designation
@@ -134,7 +135,7 @@ app/src/main/java/com/example/frigateeventviewer/
 2. **API calls**
    - ViewModels get base URL from `SettingsPreferences.getBaseUrlOnce()` (or collect `baseUrl` flow).
    - They create the service with `ApiClient.createService(baseUrl)` and call `FrigateApiService` suspend functions.
-   - **Live tab (go2rtc streams):** Uses **Frigate IP** from Settings, not the Event Buffer base URL. **Camera list:** Fetched once on app load (MainActivity calls `go2RtcStreamsRepository.refresh()`) and when Frigate IP is saved in Settings; Settings and Live tab read from `Go2RtcStreamsRepository.state` (no per-screen fetch). `SettingsPreferences.buildFrigateApiBaseUrl(frigateIp)` returns `http://<frigate_ip>:5000/`; repository uses that to call `getGo2RtcStreams()` (GET api/go2rtc/streams).
+   - **Live tab (go2rtc streams):** Uses **Frigate IP** from Settings, not the Event Buffer base URL. **Camera list:** Fetched once on app load (MainActivity calls `go2RtcStreamsRepository.refresh()`) and when Frigate IP is saved in Settings; Settings and Live tab read from `Go2RtcStreamsRepository.state` (no per-screen fetch). `SettingsPreferences.buildFrigateApiBaseUrl(frigateIp)` returns `http://<frigate_ip>:5000/`; repository uses that to call `getGo2RtcStreams()` (GET api/go2rtc/streams). **MP4 playback:** The app **exclusively uses the Frigate proxy (port 5000)**. Stream URL = `{base}api/go2rtc/api/stream.mp4?src={streamName}`. Player uses ExoPlayer with low-latency LoadControl and VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING; shows "Connecting..." / "Loading..." while buffering; error text below player shows exact reason (e.g. HTTP 404, connection refused).
    - Daily Review uses the same base URL and API client for `api/daily-review/current` and `api/daily-review/generate`.
    - No API calls from Composables; all from ViewModels.
 

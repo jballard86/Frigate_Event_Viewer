@@ -44,6 +44,8 @@ import com.example.frigateeventviewer.ui.screens.SharedEventViewModel
 import com.example.frigateeventviewer.ui.screens.SettingsScreen
 import com.example.frigateeventviewer.ui.screens.MainTabsScreen
 import com.example.frigateeventviewer.ui.screens.MainTabsViewModel
+import com.example.frigateeventviewer.ui.screens.LiveViewModel
+import com.example.frigateeventviewer.ui.screens.LiveViewModelFactory
 import com.example.frigateeventviewer.ui.screens.SnoozeScreen
 import com.example.frigateeventviewer.ui.theme.FrigateEventViewerTheme
 import kotlinx.coroutines.Dispatchers
@@ -100,6 +102,10 @@ class MainActivity : ComponentActivity() {
                 val eventsViewModel: EventsViewModel = viewModel(
                     viewModelStoreOwner = activity,
                     factory = EventsViewModelFactory(sharedEventViewModel)
+                )
+                val liveViewModel: LiveViewModel = viewModel(
+                    viewModelStoreOwner = activity,
+                    factory = LiveViewModelFactory()
                 )
                 val context = LocalContext.current
                 val resolveTrigger by deepLinkViewModel.resolveTrigger.collectAsState(initial = 0)
@@ -198,6 +204,7 @@ class MainActivity : ComponentActivity() {
                             mainTabsViewModel = mainTabsViewModel,
                             dailyReviewViewModel = dailyReviewViewModel,
                             eventsViewModel = eventsViewModel,
+                            liveViewModel = liveViewModel,
                             landscapeTabIconAlpha = landscapeTabIconAlpha
                         )
                     }

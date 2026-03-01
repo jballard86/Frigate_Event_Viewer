@@ -97,7 +97,7 @@ interface FrigateApiService {
     suspend fun getUnreadCount(): UnreadCountResponse
 
     /**
-     * List go2rtc streams (GET /api/go2rtc/streams). Frigate API; use HTTPS base URL from Frigate IP setting.
+     * List go2rtc streams (GET /api/go2rtc/streams). Frigate API; use HTTP base URL from Frigate IP setting.
      * Response is a JSON object whose top-level keys are stream names (e.g. front_door, back_yard).
      */
     @GET("api/go2rtc/streams")

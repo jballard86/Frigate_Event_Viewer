@@ -5,6 +5,10 @@ plugins {
     alias(libs.plugins.google.services)
 }
 
+// Work around OneDrive/sync locking app/build: use a build dir outside the project so clean and build succeed.
+val appBuildDir = File(System.getenv("LOCALAPPDATA") ?: "C:/Temp", "FrigateEventViewer/app-build").apply { mkdirs() }
+layout.buildDirectory.set(appBuildDir)
+
 android {
     namespace = "com.example.frigateeventviewer"
     compileSdk = 36
@@ -58,6 +62,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.media3.ui)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)

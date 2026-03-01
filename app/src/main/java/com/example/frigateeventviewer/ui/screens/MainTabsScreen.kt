@@ -56,6 +56,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.navigation.NavHostController
 import com.example.frigateeventviewer.data.model.Event
+import com.example.frigateeventviewer.ui.screens.LiveViewModel
 import kotlinx.coroutines.launch
 import android.content.res.Configuration
 
@@ -66,6 +67,7 @@ fun MainTabsScreen(
     mainTabsViewModel: MainTabsViewModel,
     dailyReviewViewModel: DailyReviewViewModel,
     eventsViewModel: EventsViewModel,
+    liveViewModel: LiveViewModel,
     landscapeTabIconAlpha: Float = 0.5f
 ) {
     val selectedTabIndex by mainTabsViewModel.selectedTabIndex.collectAsState()
@@ -296,7 +298,8 @@ fun MainTabsScreen(
                 when (page) {
                     0 -> LiveScreen(
                         currentPage = currentPage,
-                        pageIndex = 0
+                        pageIndex = 0,
+                        viewModel = liveViewModel
                     )
                     1 -> DashboardScreen(
                         currentPage = currentPage,

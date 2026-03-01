@@ -26,6 +26,29 @@ Apply these rules across all screens to keep the app visually consistent. **All 
 
 ---
 
+## State that survives configuration changes (rotation)
+
+When a screen needs **state that must survive configuration changes** (e.g. rotation)—such as selected camera, filter mode, or tab index—use an **activity-scoped** ViewModel with **SavedStateHandle**.
+
+**How to implement:**
+
+1. **ViewModel + Factory:** Give the ViewModel a factory that accepts `SavedStateHandle` (and any other dependencies). In the ViewModel constructor, use `SavedStateHandle` to persist and restore the key state (e.g. `get<String>("key")` / `set("key", value)`).
+2. **Create in MainActivity:** Create the ViewModel at the top level of `setContent` with:
+   - `viewModel(viewModelStoreOwner = activity, factory = YourViewModelFactory(...))`
+   - This scopes the ViewModel to the Activity so it is not tied to a NavBackStackEntry that may be recreated on rotation.
+3. **Pass down:** Pass the ViewModel instance into the composable that hosts the screen (e.g. MainTabsScreen), then into the screen composable (e.g. LiveScreen). The screen should declare `viewModel: YourViewModel` as a **required** parameter with **no default** `viewModel(...)` call.
+4. **Do not:** Create such ViewModels inside the screen with `viewModel(factory = ...)` and no explicit owner. The default owner is the NavBackStackEntry; its lifecycle and saved state may not restore correctly on configuration change, so selection or mode can reset.
+
+**Reference implementations:**
+
+- **Events tab:** `EventsViewModel` is created in MainActivity with `viewModelStoreOwner = activity` and `EventsViewModelFactory(sharedEventViewModel)`; filter mode (Reviewed/Unreviewed) is stored in SavedStateHandle. Passed via MainTabsScreen into EventsScreen.
+- **Live tab:** `LiveViewModel` is created in MainActivity with `viewModelStoreOwner = activity` and `LiveViewModelFactory()`; selected camera is stored in SavedStateHandle. Passed via MainTabsScreen into LiveScreen.
+- **Main tabs:** `MainTabsViewModel` (selected tab index) follows the same pattern; it is activity-scoped so the selected tab survives rotation.
+
+When adding a **new** screen that needs rotation-resistant state, follow this pattern: create the ViewModel in MainActivity, pass it through the navigation host into the screen, and document it in this UI Map (Screen inventory and this section).
+
+---
+
 ## 1. Navigation flowchart
 
 ```mermaid
@@ -102,10 +125,10 @@ flowchart TD
 ### LiveScreen
 
 - **Route:** Hosted as page 0 inside `"main_tabs"` (MainTabsScreen pager)
-- **Purpose:** Live camera selection placeholder for future web player. Under the main header: left-aligned label "Select Camera" and a dropdown populated from the Frigate go2rtc API. Body shows "Coming soon" when streams load successfully, or error message + Retry when the API fails. Styling matches other main tab screens: 16.dp horizontal padding, 8.dp top spacing below header; dropdown uses 12.dp rounded shape (RoundedCornerShape). All new UI on this screen follows the Design System (container margins, typography, shapes, spacing).
-- **ViewModel:** `LiveViewModel` (factory: `LiveViewModelFactory(application)`).
-- **States:** `LiveState` — `Loading` | `Success(streamNames: List<String>)` | `Error(message)`. Also `selectedStreamName: StateFlow<String?>` (selected key from streams; used for future web player).
-- **Data source:** Camera list from **Go2RtcStreamsRepository.state** (fetched on app load and when Frigate IP saved in Settings; Live tab does not fetch). Initial selection: if Settings default camera (getDefaultLiveCameraOnce) is in the list, use it; else first stream when non-empty. Retry calls `repository.refresh()`.
+- **Purpose:** Live camera view. Under the main header: left-aligned label "Select Camera" and a dropdown populated from the Frigate go2rtc API. Body shows a **video player** (16:9, 12.dp rounded corners, RESIZE_MODE_ZOOM, 1s controller timeout) for the selected go2rtc **MP4** stream via **Frigate proxy only** (`api/go2rtc/api/stream.mp4?src=<name>` on port 5000); when no camera is selected, shows "Select a camera" placeholder. On **stream load/playback error** (ExoPlayer error listener), the **exact reason** (e.g. HTTP 404, connection refused) is shown below the player. On list/connection error, shows error message + Retry. Styling matches other main tab screens: 16.dp horizontal padding, 8.dp top spacing below header; dropdown and video use 12.dp rounded shape. All new UI follows the Design System.
+- **ViewModel:** `LiveViewModel` (factory: `LiveViewModelFactory()`). Created in **MainActivity** with `viewModel(viewModelStoreOwner = activity, factory = LiveViewModelFactory())` so it is **activity-scoped**; **selected camera** is stored in SavedStateHandle and survives rotation. The instance is passed via MainTabsScreen into LiveScreen (required parameter; do not create inside the screen).
+- **States:** `LiveState` — `Loading` | `Success(streamNames: List<String>)` | `Error(message)`. Also `selectedStreamName: StateFlow<String?>`, `displayStreamNames: StateFlow<List<String>>` (default first), `liveStreamUrl: StateFlow<String?>` (go2rtc MP4 stream URL via Frigate proxy for ExoPlayer).
+- **Data source:** Camera list from **Go2RtcStreamsRepository.state**. Stream URL: **Frigate proxy only** — `http://<frigate_ip>:5000/api/go2rtc/api/stream.mp4?src={selectedStreamName}`. Player uses low-latency ExoPlayer (no LiveConfiguration); shows "Connecting..." / "Loading..." while buffering. Retry calls `repository.refresh()`. Video: Media3 ExoPlayer, playWhenReady true, play() when STATE_READY, pause on lifecycle ON_PAUSE; on player error, exact reason (e.g. HTTP 404, connection refused) shown under player.
 
 ---
 
