@@ -3,9 +3,11 @@ package com.example.frigateeventviewer.data
 import android.app.Application
 import com.example.frigateeventviewer.data.api.ApiClient
 import com.example.frigateeventviewer.data.preferences.SettingsPreferences
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
 
 /**
  * Shared state for the go2rtc stream list (camera names). Used by Settings (default camera
@@ -44,7 +46,9 @@ class Go2RtcStreamsRepository(private val application: Application) {
         try {
             val service = ApiClient.createService(baseUrl)
             val response = service.getGo2RtcStreams()
-            val names = response.keys.toList().sorted()
+            val names = withContext(Dispatchers.Default) {
+                response.keys.toList().sorted()
+            }
             _state.value = Go2RtcStreamsState.Success(names)
         } catch (e: Exception) {
             _state.value = Go2RtcStreamsState.Unavailable(message = e.message ?: "Failed to load streams")

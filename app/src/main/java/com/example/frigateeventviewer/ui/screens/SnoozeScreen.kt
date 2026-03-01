@@ -3,13 +3,14 @@ package com.example.frigateeventviewer.ui.screens
 import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
@@ -75,60 +76,92 @@ fun SnoozeScreen(
             onBack = onBack,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(
+            LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(innerPadding)
-                    .padding(16.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
             ) {
                 when (val s = state) {
                     is SnoozeState.Loading -> {
-                        Text(
-                            "Loading…",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        items(1, key = { "loading" }) {
+                            Text(
+                                "Loading…",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                     is SnoozeState.Error -> {
-                        Text(
-                            s.message,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        Button(onClick = { viewModel.load() }) {
-                            Text("Retry")
+                        items(1, key = { "error" }) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    s.message,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                                Button(onClick = { viewModel.load() }) {
+                                    Text("Retry")
+                                }
+                            }
                         }
                     }
                     is SnoozeState.Ready -> {
-                        PresetChips(
-                            selectedIndex = selectedPresetIndex,
-                            onSelect = { index ->
-                                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                                viewModel.setSelectedPresetIndex(index)
+                        items(1, key = { "presets" }) {
+                            PresetChips(
+                                selectedIndex = selectedPresetIndex,
+                                onSelect = { index ->
+                                    view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                    viewModel.setSelectedPresetIndex(index)
+                                }
+                            )
+                        }
+
+                        items(1, key = { "notif_toggle" }) {
+                            NotificationSnoozeToggle(
+                                checked = snoozeNotifications,
+                                onCheckedChange = viewModel::setSnoozeNotifications
+                            )
+                        }
+
+                        items(1, key = { "ai_toggle" }) {
+                            AiSnoozeToggle(
+                                checked = snoozeAi,
+                                onCheckedChange = viewModel::setSnoozeAi
+                            )
+                        }
+
+                        items(1, key = { "cameras_header" }) {
+                            Text(
+                                "Cameras",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        if (s.cameras.isEmpty()) {
+                            items(1, key = { "no_cameras" }) {
+                                Text(
+                                    "No cameras",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
-                        )
-
-                        NotificationSnoozeToggle(
-                            checked = snoozeNotifications,
-                            onCheckedChange = viewModel::setSnoozeNotifications
-                        )
-
-                        AiSnoozeToggle(
-                            checked = snoozeAi,
-                            onCheckedChange = viewModel::setSnoozeAi
-                        )
-
-                        CameraList(
-                            cameras = s.cameras,
-                            activeSnoozes = s.activeSnoozes,
-                            selectedCamera = selectedCamera,
-                            onSelectCamera = viewModel::setSelectedCamera,
-                            onSnooze = viewModel::setSnooze,
-                            onClearSnooze = viewModel::clearSnooze,
-                            operationInProgress = operationInProgress
-                        )
+                        } else {
+                            items(s.cameras, key = { it }) { camera ->
+                                CameraItem(
+                                    camera = camera,
+                                    entry = s.activeSnoozes[camera],
+                                    isSelected = selectedCamera == camera,
+                                    onSelect = { viewModel.setSelectedCamera(if (selectedCamera == camera) null else camera) },
+                                    onSnooze = { viewModel.setSnooze(camera) },
+                                    onClearSnooze = { viewModel.clearSnooze(camera) },
+                                    operationInProgress = operationInProgress
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -222,98 +255,80 @@ private fun AiSnoozeToggle(
 }
 
 @Composable
-private fun CameraList(
-    cameras: List<String>,
-    activeSnoozes: Map<String, SnoozeEntry>,
-    selectedCamera: String?,
-    onSelectCamera: (String?) -> Unit,
-    onSnooze: (String) -> Unit,
-    onClearSnooze: (String) -> Unit,
+private fun CameraItem(
+    camera: String,
+    entry: SnoozeEntry?,
+    isSelected: Boolean,
+    onSelect: () -> Unit,
+    onSnooze: () -> Unit,
+    onClearSnooze: () -> Unit,
     operationInProgress: Boolean
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            "Cameras",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            }
         )
-        if (cameras.isEmpty()) {
-            Text(
-                "No cameras",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        } else {
-            cameras.forEach { camera ->
-                val entry = activeSnoozes[camera]
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (selectedCamera == camera) {
-                            MaterialTheme.colorScheme.primaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        }
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    camera,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (entry != null) {
+                    Text(
+                        "Snoozed until ${formatExpiration(entry.expiration_time)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = onSelect,
+                    modifier = Modifier.height(40.dp).weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    enabled = !operationInProgress
                 ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    Text(
+                        if (isSelected) "Selected" else "Select",
+                        maxLines = 1
+                    )
+                }
+                if (entry != null) {
+                    Button(
+                        onClick = onClearSnooze,
+                        modifier = Modifier.height(40.dp).weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        enabled = !operationInProgress
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                camera,
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            if (entry != null) {
-                                Text(
-                                    "Snoozed until ${formatExpiration(entry.expiration_time)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = { onSelectCamera(if (selectedCamera == camera) null else camera) },
-                                modifier = Modifier.height(40.dp).weight(1f),
-                                shape = RoundedCornerShape(12.dp),
-                                enabled = !operationInProgress
-                            ) {
-                                Text(
-                                    if (selectedCamera == camera) "Selected" else "Select",
-                                    maxLines = 1
-                                )
-                            }
-                            if (entry != null) {
-                                Button(
-                                    onClick = { onClearSnooze(camera) },
-                                    modifier = Modifier.height(40.dp).weight(1f),
-                                    shape = RoundedCornerShape(12.dp),
-                                    enabled = !operationInProgress
-                                ) {
-                                    Text("Clear", maxLines = 1)
-                                }
-                            } else {
-                                Button(
-                                    onClick = { onSnooze(camera) },
-                                    modifier = Modifier.height(40.dp).weight(1f),
-                                    shape = RoundedCornerShape(12.dp),
-                                    enabled = !operationInProgress
-                                ) {
-                                    Text("Snooze", maxLines = 1)
-                                }
-                            }
-                        }
+                        Text("Clear", maxLines = 1)
+                    }
+                } else {
+                    Button(
+                        onClick = onSnooze,
+                        modifier = Modifier.height(40.dp).weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        enabled = !operationInProgress
+                    ) {
+                        Text("Snooze", maxLines = 1)
                     }
                 }
             }

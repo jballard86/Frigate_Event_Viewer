@@ -205,7 +205,7 @@ class MainActivity : ComponentActivity() {
                             dailyReviewViewModel = dailyReviewViewModel,
                             eventsViewModel = eventsViewModel,
                             liveViewModel = liveViewModel,
-                            landscapeTabIconAlpha = landscapeTabIconAlpha
+                            landscapeTabIconAlphaProvider = { landscapeTabIconAlpha }
                         )
                     }
                     composable(

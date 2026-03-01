@@ -13,6 +13,7 @@ import com.example.frigateeventviewer.data.model.Event
 import com.example.frigateeventviewer.data.model.EventsResponse
 import com.example.frigateeventviewer.data.preferences.SettingsPreferences
 import com.example.frigateeventviewer.data.push.UnreadState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
  * Filter mode for the Events tab. Single source of truth for the API filter param (never null).
@@ -99,8 +101,11 @@ class EventsViewModel(
                     // Optimistic: remove from current displayed list
                     val current = (_state.value as? EventsState.Success)?.response
                     if (current != null && _filterMode.value == EventsFilterMode.Unreviewed) {
+                        val filteredEvents = withContext(Dispatchers.Default) {
+                            current.events.filter { it.event_id != id }
+                        }
                         _state.value = EventsState.Success(
-                            current.copy(events = current.events.filter { it.event_id != id })
+                            current.copy(events = filteredEvents)
                         )
                     }
                     updateDisplayedEvents()
@@ -114,7 +119,7 @@ class EventsViewModel(
         }
     }
 
-    private fun updateDisplayedEvents() {
+    private suspend fun updateDisplayedEvents() {
         val response = when (val s = _state.value) {
             is EventsState.Loading -> s.previous
             is EventsState.Success -> s.response
@@ -122,11 +127,14 @@ class EventsViewModel(
         }
         val events = response?.events ?: emptyList()
         val localSet = UnreadState.locallyMarkedReviewedEventIds.value
-        _displayedEvents.value = if (_filterMode.value == EventsFilterMode.Unreviewed) {
-            events.filter { it.event_id !in localSet }
-        } else {
-            events
+        val filtered = withContext(Dispatchers.Default) {
+            if (_filterMode.value == EventsFilterMode.Unreviewed) {
+                events.filter { it.event_id !in localSet }
+            } else {
+                events
+            }
         }
+        _displayedEvents.value = filtered
     }
 
     /** Switches filter mode and refetches. Persists mode to [SavedStateHandle] for rotation survival. */
@@ -219,7 +227,9 @@ class EventsViewModel(
             try {
                 val service = ApiClient.createService(baseUrlValue)
                 val response = service.getEvents(filter = "all")
-                val existingIds = response.events.mapTo(mutableSetOf()) { it.event_id }
+                val existingIds = withContext(Dispatchers.Default) {
+                    response.events.mapTo(mutableSetOf()) { it.event_id }
+                }
                 UnreadState.pruneToExistingIds(existingIds)
                 updateDisplayedEvents()
             } catch (_: Exception) {

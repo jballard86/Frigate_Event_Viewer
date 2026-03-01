@@ -3,11 +3,12 @@ package com.example.frigateeventviewer.data.push
 import android.app.NotificationManager
 import android.content.Context
 import androidx.core.app.NotificationCompat
+import androidx.lifecycle.ProcessLifecycleOwner
+import androidx.lifecycle.lifecycleScope
 import com.example.frigateeventviewer.R
 import com.example.frigateeventviewer.data.api.ApiClient
 import com.example.frigateeventviewer.data.preferences.SettingsPreferences
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -24,7 +25,7 @@ object UnreadBadgeHelper {
      * the badge. Call from MainActivity onResume().
      */
     fun updateFromServer(context: Context) {
-        GlobalScope.launch(Dispatchers.IO) {
+        ProcessLifecycleOwner.get().lifecycleScope.launch(Dispatchers.IO) {
             val baseUrl = SettingsPreferences(context).getBaseUrlOnce()
             if (baseUrl.isNullOrBlank()) return@launch
             try {

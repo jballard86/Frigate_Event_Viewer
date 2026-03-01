@@ -68,7 +68,7 @@ fun MainTabsScreen(
     dailyReviewViewModel: DailyReviewViewModel,
     eventsViewModel: EventsViewModel,
     liveViewModel: LiveViewModel,
-    landscapeTabIconAlpha: Float = 0.5f
+    landscapeTabIconAlphaProvider: () -> Float
 ) {
     val selectedTabIndex by mainTabsViewModel.selectedTabIndex.collectAsState()
     val pagerState = rememberPagerState(
@@ -82,14 +82,7 @@ fun MainTabsScreen(
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     var showBottomBarInLandscape by remember { mutableStateOf(false) }
-    val eventsPageTitle by eventsViewModel.eventsPageTitle.collectAsState()
-    val pageTitle = when (pagerState.currentPage) {
-        0 -> "Live"
-        1 -> "Dashboard"
-        2 -> eventsPageTitle
-        3 -> "Daily Review"
-        else -> ""
-    }
+
     val showBottomBar = !isLandscape || showBottomBarInLandscape
     LaunchedEffect(isLandscape) {
         if (isLandscape) showBottomBarInLandscape = false
@@ -102,6 +95,14 @@ fun MainTabsScreen(
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
+            val eventsPageTitle by eventsViewModel.eventsPageTitle.collectAsState()
+            val pageTitle = when (pagerState.currentPage) {
+                0 -> "Live"
+                1 -> "Dashboard"
+                2 -> eventsPageTitle
+                3 -> "Daily Review"
+                else -> ""
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -159,7 +160,7 @@ fun MainTabsScreen(
                                     modifier = Modifier
                                         .padding(end = barMaxWidth * 0.1f)
                                         .size(48.dp)
-                                        .alpha(landscapeTabIconAlpha)
+                                        .alpha(landscapeTabIconAlphaProvider())
                                         .border(
                                             width = 2.dp,
                                             color = MaterialTheme.colorScheme.outline,
@@ -335,7 +336,7 @@ fun MainTabsScreen(
                             y = -(maxHeight * 0.1f)
                         )
                         .size(48.dp)
-                        .alpha(landscapeTabIconAlpha)
+                        .alpha(landscapeTabIconAlphaProvider())
                         .border(
                             width = 2.dp,
                             color = MaterialTheme.colorScheme.outline,
