@@ -275,6 +275,7 @@ private fun LiveVideoPlayer(
             player.clearMediaItems()
             isVideoReady = false
         } else {
+            streamError = null
             streamStatus = "Connecting..."
             if (player.mediaItemCount == 0) {
                 val mediaItem = MediaItem.Builder()
@@ -434,14 +435,14 @@ private fun LiveVideoPlayer(
 fun LiveScreen(
     currentPage: Int,
     pageIndex: Int,
-    viewModel: LiveViewModel
+    viewModel: LiveViewModel,
+    isVisible: Boolean
 ) {
     val state by viewModel.state.collectAsState()
     val selectedStreamName by viewModel.selectedStreamName.collectAsState()
     val displayStreamNames by viewModel.displayStreamNames.collectAsState()
     val liveStreamUrl by viewModel.liveStreamUrl.collectAsState()
     val liveFrigateBaseUrl by viewModel.liveFrigateBaseUrl.collectAsState()
-    val isVisible = currentPage == pageIndex
     var dropdownExpanded by remember { mutableStateOf(false) }
     var dropdownWidthDp by remember { mutableStateOf(0.dp) }
     val density = LocalDensity.current

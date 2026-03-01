@@ -289,17 +289,20 @@ fun MainTabsScreen(
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val currentPage = pagerState.currentPage
+            val isLiveTabVisible = pagerState.currentPage == 0
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding)
+                    .padding(innerPadding),
+                beyondViewportPageCount = 3
             ) { page ->
                 when (page) {
                     0 -> LiveScreen(
                         currentPage = currentPage,
                         pageIndex = 0,
-                        viewModel = liveViewModel
+                        viewModel = liveViewModel,
+                        isVisible = isLiveTabVisible
                     )
                     1 -> DashboardScreen(
                         currentPage = currentPage,
