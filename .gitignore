@@ -49,3 +49,6 @@ gradle-app.setting
 
 ### Cursor / tooling metadata
 .cursor/
+
+### Sync / backup metadata
+sync.ffs*
