@@ -35,11 +35,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -181,8 +183,9 @@ fun EventsScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(displayEvents, key = { it.event_id }) { event ->
+                        val item = eventToCardItem(event)
                         EventCard(
-                            event = event,
+                            item = item,
                             baseUrl = baseUrl,
                             onClick = { onEventClick(event) }
                         )
@@ -202,32 +205,54 @@ fun EventsScreen(
     }
 }
 
+/**
+ * Minimal, stable display model for a single event row. Used so EventCard receives only
+ * primitives and strings, avoiding recomposition from unstable Event (List<> fields).
+ */
+private data class EventCardItem(
+    val event_id: String,
+    val thumbnailPath: String?,
+    val formattedTime: String,
+    val cameraLabel: String,
+    val threat_level: Int,
+    val label: String?
+)
+
+private fun eventToCardItem(event: Event): EventCardItem = EventCardItem(
+    event_id = event.event_id,
+    thumbnailPath = event.hosted_snapshot?.takeIf { it.isNotBlank() } ?: event.hosted_clip,
+    formattedTime = formatTimestamp(event.timestamp),
+    cameraLabel = formatCameraName(event.camera),
+    threat_level = event.threat_level,
+    label = event.label
+)
+
 @Composable
 private fun EventCard(
-    event: Event,
+    item: EventCardItem,
     baseUrl: String?,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
-    val thumbnailPath = when {
-        !event.hosted_snapshot.isNullOrBlank() -> event.hosted_snapshot
-        else -> event.hosted_clip
-    }
-    val thumbnailUrl = buildMediaUrl(baseUrl, thumbnailPath)
+    val density = LocalDensity.current
+    val widthPx = with(density) { 80.dp.roundToPx() }
+    val heightPx = with(density) { 60.dp.roundToPx() }
+    val thumbnailUrl = buildMediaUrl(baseUrl, item.thumbnailPath)
     val imageRequest = thumbnailUrl?.let { url ->
-        ImageRequest.Builder(context)
-            .data(url)
-            .build()
+        remember(url, widthPx, heightPx) {
+            ImageRequest.Builder(context)
+                .data(url)
+                .size(widthPx, heightPx)
+                .build()
+        }
     }
-    val formattedTime = formatTimestamp(event.timestamp)
-    val cameraLabel = formatCameraName(event.camera)
-    val threatColor = when (event.threat_level) {
+    val threatColor = when (item.threat_level) {
         0 -> MaterialTheme.colorScheme.primary
         1 -> MaterialTheme.colorScheme.tertiary
         2 -> MaterialTheme.colorScheme.error
         else -> MaterialTheme.colorScheme.outline
     }
-    val threatIcon = when (event.threat_level) {
+    val threatIcon = when (item.threat_level) {
         0 -> Icons.Default.CheckCircle
         1 -> Icons.Default.Warning
         2 -> Icons.Default.Error
@@ -284,11 +309,11 @@ private fun EventCard(
             }
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = cameraLabel,
+                    text = item.cameraLabel,
                     style = MaterialTheme.typography.titleMedium
                 )
                 Text(
-                    text = formattedTime,
+                    text = item.formattedTime,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -297,7 +322,7 @@ private fun EventCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    event.label?.let { label ->
+                    item.label?.let { label ->
                         Text(
                             text = label,
                             style = MaterialTheme.typography.labelMedium
@@ -305,7 +330,7 @@ private fun EventCard(
                     }
                     Icon(
                         imageVector = threatIcon,
-                        contentDescription = "Threat level ${event.threat_level}",
+                        contentDescription = "Threat level ${item.threat_level}",
                         modifier = Modifier.size(16.dp),
                         tint = threatColor
                     )
