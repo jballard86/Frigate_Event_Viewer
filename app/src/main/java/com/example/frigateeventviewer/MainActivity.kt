@@ -96,6 +96,10 @@ class MainActivity : ComponentActivity() {
                 val navController = rememberNavController()
                 val sharedEventViewModel: SharedEventViewModel = viewModel<SharedEventViewModel>()
                 val mainTabsViewModel: MainTabsViewModel = viewModel()
+                val eventsViewModel: EventsViewModel = viewModel(
+                    viewModelStoreOwner = activity,
+                    factory = EventsViewModelFactory(sharedEventViewModel)
+                )
                 val context = LocalContext.current
                 val resolveTrigger by deepLinkViewModel.resolveTrigger.collectAsState(initial = 0)
 
@@ -184,8 +188,6 @@ class MainActivity : ComponentActivity() {
                         )
                         val dailyReviewViewModel: DailyReviewViewModel =
                             viewModel(factory = DailyReviewViewModelFactory(application))
-                        val eventsViewModel: EventsViewModel =
-                            viewModel(factory = EventsViewModelFactory(application, sharedEventViewModel))
                         MainTabsScreen(
                             navController = navController,
                             sharedEventViewModel = sharedEventViewModel,

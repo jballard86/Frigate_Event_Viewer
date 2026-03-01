@@ -2,8 +2,11 @@ package com.example.frigateeventviewer.ui.screens
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.createSavedStateHandle
+import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewModelScope
 import com.example.frigateeventviewer.data.api.ApiClient
 import com.example.frigateeventviewer.data.model.Event
@@ -42,22 +45,24 @@ sealed class EventsState {
  * ViewModel for the Events screen.
  * Loads events by filter mode (reviewed / unreviewed); exposes baseUrl, page title, and toggle button label.
  * Keeps previous list on screen while refreshing. Subscribes to [SharedEventViewModel.eventsRefreshRequested].
+ * Filter mode is stored in [SavedStateHandle] so it survives configuration changes (e.g. rotation).
  */
 class EventsViewModel(
     application: Application,
-    sharedEventViewModel: SharedEventViewModel
+    sharedEventViewModel: SharedEventViewModel,
+    private val savedStateHandle: SavedStateHandle
 ) : AndroidViewModel(application) {
 
     private val preferences = SettingsPreferences(application)
     private val loadMutex = Mutex()
     private var loadJob: Job? = null
 
-    /** Current filter mode; default Unreviewed. */
-    private val _filterMode = MutableStateFlow(EventsFilterMode.Unreviewed)
+    /** Current filter mode; restored from [SavedStateHandle] on init, default Unreviewed. */
+    private val _filterMode = MutableStateFlow(restoreFilterMode())
     val filterMode: StateFlow<EventsFilterMode> = _filterMode.asStateFlow()
 
     /** Page title for the topBar when Events tab is selected. */
-    private val _eventsPageTitle = MutableStateFlow("Unreviewed Events")
+    private val _eventsPageTitle = MutableStateFlow(titleForMode(_filterMode.value))
     val eventsPageTitle: StateFlow<String> = _eventsPageTitle.asStateFlow()
 
     /** Base URL for the UI to build media URLs via [com.example.frigateeventviewer.ui.util.buildMediaUrl]. */
@@ -76,7 +81,7 @@ class EventsViewModel(
     val displayedEvents: StateFlow<List<Event>> = _displayedEvents.asStateFlow()
 
     /** Label for the toggle button: "View Reviewed Events" or "View Unreviewed Events". */
-    private val _filterToggleButtonLabel = MutableStateFlow("View Reviewed Events")
+    private val _filterToggleButtonLabel = MutableStateFlow(toggleLabelForMode(_filterMode.value))
     val filterToggleButtonLabel: StateFlow<String> = _filterToggleButtonLabel.asStateFlow()
 
     init {
@@ -123,19 +128,14 @@ class EventsViewModel(
         }
     }
 
-    /** Switches filter mode and refetches. */
+    /** Switches filter mode and refetches. Persists mode to [SavedStateHandle] for rotation survival. */
     fun setFilterMode(reviewed: Boolean) {
         val newMode = if (reviewed) EventsFilterMode.Reviewed else EventsFilterMode.Unreviewed
         if (_filterMode.value == newMode) return
         _filterMode.value = newMode
-        _eventsPageTitle.value = when (newMode) {
-            EventsFilterMode.Unreviewed -> "Unreviewed Events"
-            EventsFilterMode.Reviewed -> "Reviewed Events"
-        }
-        _filterToggleButtonLabel.value = when (newMode) {
-            EventsFilterMode.Unreviewed -> "View Reviewed Events"
-            EventsFilterMode.Reviewed -> "View Unreviewed Events"
-        }
+        savedStateHandle[KEY_FILTER_MODE] = newMode.name
+        _eventsPageTitle.value = titleForMode(newMode)
+        _filterToggleButtonLabel.value = toggleLabelForMode(newMode)
         loadEvents()
     }
 
@@ -161,14 +161,8 @@ class EventsViewModel(
         val currentSuccess = (_state.value as? EventsState.Success)?.response
         val isRefresh = currentSuccess != null
         _state.value = EventsState.Loading(if (isRefresh) currentSuccess else null)
-        _eventsPageTitle.value = when (_filterMode.value) {
-            EventsFilterMode.Unreviewed -> "Unreviewed Events"
-            EventsFilterMode.Reviewed -> "Reviewed Events"
-        }
-        _filterToggleButtonLabel.value = when (_filterMode.value) {
-            EventsFilterMode.Unreviewed -> "View Reviewed Events"
-            EventsFilterMode.Reviewed -> "View Unreviewed Events"
-        }
+        _eventsPageTitle.value = titleForMode(_filterMode.value)
+        _filterToggleButtonLabel.value = toggleLabelForMode(_filterMode.value)
         updateDisplayedEvents()
         val baseUrlValue = preferences.getBaseUrlOnce()
         if (baseUrlValue == null) {
@@ -192,6 +186,24 @@ class EventsViewModel(
         runWatchdog()
     }
 
+    private fun restoreFilterMode(): EventsFilterMode {
+        val saved = savedStateHandle.get<String>(KEY_FILTER_MODE) ?: return EventsFilterMode.Unreviewed
+        return when (saved) {
+            EventsFilterMode.Reviewed.name -> EventsFilterMode.Reviewed
+            else -> EventsFilterMode.Unreviewed
+        }
+    }
+
+    private fun titleForMode(mode: EventsFilterMode): String = when (mode) {
+        EventsFilterMode.Unreviewed -> "Unreviewed Events"
+        EventsFilterMode.Reviewed -> "Reviewed Events"
+    }
+
+    private fun toggleLabelForMode(mode: EventsFilterMode): String = when (mode) {
+        EventsFilterMode.Unreviewed -> "View Reviewed Events"
+        EventsFilterMode.Reviewed -> "View Unreviewed Events"
+    }
+
     /**
      * Prunes locally marked reviewed set to only ids that still exist on the server.
      * Uses GET /events?filter=all; runs after each load so storage stays bounded.
@@ -210,20 +222,27 @@ class EventsViewModel(
             }
         }
     }
+
+    companion object {
+        private const val KEY_FILTER_MODE = "events_filter_mode"
+    }
 }
 
 /**
- * Factory for [EventsViewModel] so it receives [Application] and [SharedEventViewModel].
+ * Factory for [EventsViewModel]. Uses [CreationExtras] so the owner's [SavedStateHandle]
+ * (e.g. Activity's) is supplied by the framework; survives configuration changes and is owner-agnostic.
  */
 class EventsViewModelFactory(
-    private val application: Application,
     private val sharedEventViewModel: SharedEventViewModel
 ) : ViewModelProvider.Factory {
+
     @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        if (modelClass.isAssignableFrom(EventsViewModel::class.java)) {
-            return EventsViewModel(application, sharedEventViewModel) as T
+    override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
+        if (!modelClass.isAssignableFrom(EventsViewModel::class.java)) {
+            throw IllegalArgumentException("Unknown ViewModel class: $modelClass")
         }
-        throw IllegalArgumentException("Unknown ViewModel class")
+        val application = checkNotNull(extras[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY]) as Application
+        val savedStateHandle = extras.createSavedStateHandle()
+        return EventsViewModel(application, sharedEventViewModel, savedStateHandle) as T
     }
 }

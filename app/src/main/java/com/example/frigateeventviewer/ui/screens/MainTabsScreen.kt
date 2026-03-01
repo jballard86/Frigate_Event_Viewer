@@ -18,12 +18,13 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -70,7 +71,7 @@ fun MainTabsScreen(
     val selectedTabIndex by mainTabsViewModel.selectedTabIndex.collectAsState()
     val pagerState = rememberPagerState(
         initialPage = selectedTabIndex,
-        pageCount = { 3 }
+        pageCount = { 4 }
     )
     LaunchedEffect(pagerState.settledPage) {
         mainTabsViewModel.setSelectedTabIndex(pagerState.settledPage)
@@ -81,9 +82,10 @@ fun MainTabsScreen(
     var showBottomBarInLandscape by remember { mutableStateOf(false) }
     val eventsPageTitle by eventsViewModel.eventsPageTitle.collectAsState()
     val pageTitle = when (pagerState.currentPage) {
-        0 -> "Dashboard"
-        1 -> eventsPageTitle
-        2 -> "Daily Review"
+        0 -> "Live"
+        1 -> "Dashboard"
+        2 -> eventsPageTitle
+        3 -> "Daily Review"
         else -> ""
     }
     val showBottomBar = !isLandscape || showBottomBarInLandscape
@@ -110,7 +112,7 @@ fun MainTabsScreen(
                     style = MaterialTheme.typography.headlineLarge
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
-                    if (pagerState.currentPage == 0) {
+                    if (pagerState.currentPage == 1) {
                         IconButton(
                             onClick = { navController.navigate("snooze") }
                         ) {
@@ -198,8 +200,8 @@ fun MainTabsScreen(
                                         pagerState.animateScrollToPage(0)
                                     }
                                 },
-                                icon = { Icon(Icons.Default.Dashboard, contentDescription = "Dashboard") },
-                                label = { Text("Dashboard") }
+                                icon = { Icon(Icons.Default.Videocam, contentDescription = "Live") },
+                                label = { Text("Live") }
                             )
                             NavigationBarItem(
                                 selected = pagerState.currentPage == 1,
@@ -208,14 +210,24 @@ fun MainTabsScreen(
                                         pagerState.animateScrollToPage(1)
                                     }
                                 },
-                                icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Events") },
-                                label = { Text("Events") }
+                                icon = { Icon(Icons.Default.Dashboard, contentDescription = "Dashboard") },
+                                label = { Text("Dashboard") }
                             )
                             NavigationBarItem(
                                 selected = pagerState.currentPage == 2,
                                 onClick = {
                                     coroutineScope.launch {
                                         pagerState.animateScrollToPage(2)
+                                    }
+                                },
+                                icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Events") },
+                                label = { Text("Events") }
+                            )
+                            NavigationBarItem(
+                                selected = pagerState.currentPage == 3,
+                                onClick = {
+                                    coroutineScope.launch {
+                                        pagerState.animateScrollToPage(3)
                                     }
                                 },
                                 icon = { Icon(Icons.Default.Description, contentDescription = "Daily Review") },
@@ -234,8 +246,8 @@ fun MainTabsScreen(
                                     pagerState.animateScrollToPage(0)
                                 }
                             },
-                            icon = { Icon(Icons.Default.Dashboard, contentDescription = "Dashboard") },
-                            label = { Text("Dashboard") }
+                            icon = { Icon(Icons.Default.Videocam, contentDescription = "Live") },
+                            label = { Text("Live") }
                         )
                         NavigationBarItem(
                             selected = pagerState.currentPage == 1,
@@ -244,14 +256,24 @@ fun MainTabsScreen(
                                     pagerState.animateScrollToPage(1)
                                 }
                             },
-                            icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Events") },
-                            label = { Text("Events") }
+                            icon = { Icon(Icons.Default.Dashboard, contentDescription = "Dashboard") },
+                            label = { Text("Dashboard") }
                         )
                         NavigationBarItem(
                             selected = pagerState.currentPage == 2,
                             onClick = {
                                 coroutineScope.launch {
                                     pagerState.animateScrollToPage(2)
+                                }
+                            },
+                            icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Events") },
+                            label = { Text("Events") }
+                        )
+                        NavigationBarItem(
+                            selected = pagerState.currentPage == 3,
+                            onClick = {
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(3)
                                 }
                             },
                             icon = { Icon(Icons.Default.Description, contentDescription = "Daily Review") },
@@ -272,24 +294,28 @@ fun MainTabsScreen(
                     .padding(innerPadding)
             ) { page ->
                 when (page) {
-                    0 -> DashboardScreen(
+                    0 -> LiveScreen(
                         currentPage = currentPage,
                         pageIndex = 0
                     )
-                    1 -> EventsScreen(
+                    1 -> DashboardScreen(
+                        currentPage = currentPage,
+                        pageIndex = 1
+                    )
+                    2 -> EventsScreen(
                         onEventClick = { event: Event ->
                             sharedEventViewModel.selectEvent(event)
                             navController.navigate("event_detail")
                         },
                         currentPage = currentPage,
-                        pageIndex = 1,
+                        pageIndex = 2,
                         sharedEventViewModel = sharedEventViewModel,
                         viewModel = eventsViewModel
                     )
-                    2 -> DailyReviewScreen(
+                    3 -> DailyReviewScreen(
                         viewModel = dailyReviewViewModel,
                         currentPage = currentPage,
-                        pageIndex = 2
+                        pageIndex = 3
                     )
                 }
             }

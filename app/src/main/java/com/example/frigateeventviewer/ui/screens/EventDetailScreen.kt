@@ -4,6 +4,7 @@ import android.net.Uri
 import android.view.ViewGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -38,6 +39,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.net.toUri
@@ -58,6 +61,7 @@ import coil.request.ImageRequest
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import android.content.res.Configuration
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -146,26 +150,36 @@ fun EventDetailScreen(
         val eventPath = "${event.camera}/${event.subdir}"
         val isOperationLoading = operationState is EventDetailOperationState.Loading
 
-        Column(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp)
-                .verticalScroll(rememberScrollState())
         ) {
-            EventVideoSection(
-                event = event,
-                baseUrl = baseUrl
-            )
-            EventActionsSection(
-                eventPath = eventPath,
-                saved = event.saved == true,
-                isLoading = isOperationLoading,
-                onMarkReviewed = { viewModel.markViewed(eventPath) },
-                onKeep = { viewModel.keepEvent(eventPath) },
-                onDelete = { viewModel.deleteEvent(eventPath) }
-            )
-            EventMetadataSection(event = event)
+            val configuration = LocalConfiguration.current
+            val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+            val availableHeightDp: Dp? = if (isLandscape) maxHeight else null
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                EventVideoSection(
+                    event = event,
+                    baseUrl = baseUrl,
+                    availableHeightDp = availableHeightDp
+                )
+                EventActionsSection(
+                    eventPath = eventPath,
+                    saved = event.saved == true,
+                    isLoading = isOperationLoading,
+                    onMarkReviewed = { viewModel.markViewed(eventPath) },
+                    onKeep = { viewModel.keepEvent(eventPath) },
+                    onDelete = { viewModel.deleteEvent(eventPath) }
+                )
+                EventMetadataSection(event = event)
+            }
         }
         }
         }
@@ -175,7 +189,8 @@ fun EventDetailScreen(
 @Composable
 private fun EventVideoSection(
     event: Event,
-    baseUrl: String?
+    baseUrl: String?,
+    availableHeightDp: Dp? = null
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -184,30 +199,32 @@ private fun EventVideoSection(
         ?: event.hosted_clips.firstOrNull()?.url
     val clipUrl = buildMediaUrl(baseUrl, clipPath)
 
+    val videoModifier = if (availableHeightDp != null) {
+        Modifier.fillMaxWidth().height(availableHeightDp)
+    } else {
+        Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+    }.clip(RoundedCornerShape(12.dp))
+
     // Placeholder: same source as events tab (hosted_snapshot else hosted_clip) when no clip yet.
     val placeholderPath = when {
         !event.hosted_snapshot.isNullOrBlank() -> event.hosted_snapshot
         else -> event.hosted_clip?.takeIf { it.isNotBlank() } ?: event.hosted_clips.firstOrNull()?.url
     }
     val placeholderUrl = buildMediaUrl(baseUrl, placeholderPath)
+    val isLandscape = availableHeightDp != null
+    val placeholderScale = if (isLandscape) ContentScale.Fit else ContentScale.Crop
 
     if (clipUrl == null) {
         if (!placeholderUrl.isNullOrBlank()) {
             AsyncImage(
                 model = ImageRequest.Builder(context).data(placeholderUrl).build(),
                 contentDescription = "Event snapshot",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 9f)
-                    .clip(RoundedCornerShape(12.dp)),
-                contentScale = ContentScale.Crop
+                modifier = videoModifier,
+                contentScale = placeholderScale
             )
         } else {
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 9f)
-                    .clip(RoundedCornerShape(12.dp)),
+                modifier = videoModifier,
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -246,6 +263,11 @@ private fun EventVideoSection(
             }
         }
 
+        val resizeMode = if (isLandscape) {
+            AspectRatioFrameLayout.RESIZE_MODE_FIT
+        } else {
+            AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+        }
         AndroidView(
             factory = {
                 PlayerView(context).apply {
@@ -253,18 +275,16 @@ private fun EventVideoSection(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT
                     )
-                    setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_ZOOM)
+                    setResizeMode(resizeMode)
                     controllerShowTimeoutMs = 1000
                     this.player = player
                 }
             },
             update = { playerView ->
                 playerView.player = player
+                playerView.setResizeMode(resizeMode)
             },
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(12.dp)),
+            modifier = videoModifier,
             onRelease = { playerView ->
                 playerView.player = null
             }

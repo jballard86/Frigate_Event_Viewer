@@ -1,16 +1,19 @@
 package com.example.frigateeventviewer.ui.screens
 
 import android.app.Application
+import android.content.res.Configuration
 import android.net.Uri
 import android.text.format.DateUtils
 import android.view.ViewGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -35,6 +38,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -81,7 +86,11 @@ fun DashboardScreen(
         onRefresh = { viewModel.refresh() },
         modifier = Modifier.fillMaxSize()
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val configuration = LocalConfiguration.current
+            val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+            val availableHeightDp: Dp? = if (isLandscape) maxHeight else null
+
             when (val s = state) {
             is DashboardState.Loading -> {
                 if (s.previous != null) {
@@ -89,7 +98,8 @@ fun DashboardScreen(
                         stats = s.previous,
                         recentEvent = recentEvent,
                         baseUrl = baseUrl,
-                        onRetry = { viewModel.refresh() }
+                        onRetry = { viewModel.refresh() },
+                        availableHeightDp = availableHeightDp
                     )
                 } else {
                     BoxWithProgress()
@@ -100,7 +110,8 @@ fun DashboardScreen(
                     stats = s.stats,
                     recentEvent = recentEvent,
                     baseUrl = baseUrl,
-                    onRetry = { viewModel.refresh() }
+                    onRetry = { viewModel.refresh() },
+                    availableHeightDp = availableHeightDp
                 )
             }
             is DashboardState.Error -> {
@@ -157,7 +168,8 @@ private fun DashboardContent(
     stats: StatsResponse,
     recentEvent: Event?,
     baseUrl: String?,
-    onRetry: () -> Unit
+    onRetry: () -> Unit,
+    availableHeightDp: Dp? = null
 ) {
     val scrollState = rememberScrollState()
     Column(
@@ -169,7 +181,8 @@ private fun DashboardContent(
     ) {
         RecentEventCard(
             event = recentEvent,
-            baseUrl = baseUrl
+            baseUrl = baseUrl,
+            availableHeightDp = availableHeightDp
         )
 
         val events = stats.events
@@ -276,7 +289,8 @@ private fun StatCard(
 @Composable
 private fun RecentEventCard(
     event: Event?,
-    baseUrl: String?
+    baseUrl: String?,
+    availableHeightDp: Dp? = null
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -321,13 +335,19 @@ private fun RecentEventCard(
             return@Card
         }
 
-        RecentEventVideoPlayer(clipUrl = clipUrl)
+        RecentEventVideoPlayer(
+            clipUrl = clipUrl,
+            availableHeightDp = availableHeightDp
+        )
         RecentEventTextSection(event = event)
     }
 }
 
 @Composable
-private fun RecentEventVideoPlayer(clipUrl: String) {
+private fun RecentEventVideoPlayer(
+    clipUrl: String,
+    availableHeightDp: Dp? = null
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -354,6 +374,18 @@ private fun RecentEventVideoPlayer(clipUrl: String) {
         }
     }
 
+    val isLandscape = availableHeightDp != null
+    val resizeMode = if (isLandscape) {
+        AspectRatioFrameLayout.RESIZE_MODE_FIT
+    } else {
+        AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+    }
+    val videoModifier = if (availableHeightDp != null) {
+        Modifier.fillMaxWidth().height(availableHeightDp)
+    } else {
+        Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+    }.clip(RoundedCornerShape(12.dp))
+
     AndroidView(
         factory = {
             PlayerView(context).apply {
@@ -361,18 +393,16 @@ private fun RecentEventVideoPlayer(clipUrl: String) {
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 )
-                setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_ZOOM)
+                setResizeMode(resizeMode)
                 controllerShowTimeoutMs = 1000
                 this.player = player
             }
         },
         update = { playerView ->
             playerView.player = player
+            playerView.setResizeMode(resizeMode)
         },
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(16f / 9f)
-            .clip(RoundedCornerShape(12.dp)),
+        modifier = videoModifier,
         onRelease = { playerView ->
             playerView.player = null
         }
