@@ -1,4 +1,4 @@
-# APFrigate Event Viewer
+# Frigate Event Viewer
 
 The native, intelligent Android command center for your Frigate NVR system.
 
