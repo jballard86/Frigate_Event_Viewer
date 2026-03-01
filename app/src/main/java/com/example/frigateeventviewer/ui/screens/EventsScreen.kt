@@ -73,7 +73,7 @@ fun EventsScreen(
     LaunchedEffect(lifecycle, currentPage, pageIndex) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             if (currentPage == pageIndex) {
-                viewModel.refresh()
+                viewModel.refresh(force = false)
             }
         }
     }
@@ -93,7 +93,7 @@ fun EventsScreen(
 
     PullToRefreshBox(
         isRefreshing = isLoading,
-        onRefresh = { viewModel.refresh() },
+        onRefresh = { viewModel.refresh(force = true) },
         modifier = Modifier.fillMaxSize()
     ) {
         Column(
@@ -139,7 +139,7 @@ fun EventsScreen(
                         color = MaterialTheme.colorScheme.error
                     )
                     Button(
-                        onClick = { viewModel.refresh() },
+                        onClick = { viewModel.refresh(force = true) },
                         modifier = Modifier.padding(top = 16.dp)
                     ) {
                         Text("Retry")
@@ -174,7 +174,7 @@ fun EventsScreen(
                             color = MaterialTheme.colorScheme.error,
                             modifier = Modifier.weight(1f)
                         )
-                        Button(onClick = { viewModel.refresh() }) { Text("Retry") }
+                        Button(onClick = { viewModel.refresh(force = true) }) { Text("Retry") }
                     }
                 }
                 LazyColumn(

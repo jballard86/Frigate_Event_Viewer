@@ -2,6 +2,7 @@ package com.example.frigateeventviewer.data.push
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -32,17 +33,17 @@ object UnreadState {
     private val _state = MutableStateFlow(State(0, emptySet()))
     private val state: StateFlow<State> = _state.asStateFlow()
 
-    private val scope = CoroutineScope(Dispatchers.Unconfined)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** Event IDs the user has marked as reviewed (or removed on delete). Used by Events list to filter. */
     val locallyMarkedReviewedEventIds: StateFlow<Set<String>> = state
         .map { it.locallyMarkedReviewedEventIds }
-        .stateIn(scope, SharingStarted.Eagerly, emptySet())
+        .stateIn(scope, SharingStarted.WhileSubscribed(5000), emptySet())
 
     /** Effective count for the badge: max(0, lastFetched - locallyMarkedSize). */
     val effectiveUnreadCount: StateFlow<Int> = state
         .map { (count, set) -> maxOf(0, count - set.size) }
-        .stateIn(scope, SharingStarted.Eagerly, 0)
+        .stateIn(scope, SharingStarted.WhileSubscribed(5000), 0)
 
     /** Current effective count for synchronous use (e.g. badge apply). */
     fun currentEffectiveUnreadCount(): Int {

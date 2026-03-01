@@ -56,6 +56,7 @@ class EventsViewModel(
     private val preferences = SettingsPreferences(application)
     private val loadMutex = Mutex()
     private var loadJob: Job? = null
+    private var lastFetchTime = 0L
 
     /** Current filter mode; restored from [SavedStateHandle] on init, default Unreviewed. */
     private val _filterMode = MutableStateFlow(restoreFilterMode())
@@ -142,7 +143,10 @@ class EventsViewModel(
     /**
      * Re-fetches GET /events with current filter. Keeps previous list on screen while loading.
      */
-    fun refresh() {
+    fun refresh(force: Boolean = false) {
+        if (!force && lastFetchTime > 0 && System.currentTimeMillis() - lastFetchTime < 5 * 60 * 1000 && _state.value is EventsState.Success) {
+            return
+        }
         loadEvents()
     }
 
@@ -176,6 +180,7 @@ class EventsViewModel(
             val response = service.getEvents(filter = filter)
             _state.value = EventsState.Success(response)
             updateDisplayedEvents()
+            lastFetchTime = System.currentTimeMillis()
         } catch (e: Exception) {
             _state.value = EventsState.Error(
                 e.message ?: "Failed to load events",

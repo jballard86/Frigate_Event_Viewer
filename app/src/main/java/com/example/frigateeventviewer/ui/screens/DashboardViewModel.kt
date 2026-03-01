@@ -32,6 +32,7 @@ sealed class DashboardState {
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
 
     private val preferences = SettingsPreferences(application)
+    private var lastFetchTime = 0L
 
     private val _state = MutableStateFlow<DashboardState>(DashboardState.Loading(null))
     val state: StateFlow<DashboardState> = _state.asStateFlow()
@@ -55,7 +56,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     /**
      * Re-fetches GET /stats. Called on pull-to-refresh or retry.
      */
-    fun refresh() {
+    fun refresh(force: Boolean = false) {
+        if (!force && lastFetchTime > 0 && System.currentTimeMillis() - lastFetchTime < 5 * 60 * 1000 && _state.value is DashboardState.Success) {
+            return
+        }
         loadStats(keepPrevious = true)
     }
 
@@ -82,6 +86,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 }
                 _recentEvent.value = recent
                 _state.value = DashboardState.Success(stats)
+                lastFetchTime = System.currentTimeMillis()
             } catch (e: Exception) {
                 _state.value = DashboardState.Error(
                     e.message ?: "Failed to load stats",

@@ -14,7 +14,7 @@ object NotificationImageCache {
 
     private data class Entry(val bitmap: Bitmap, val cachedAtMillis: Long)
 
-    private val cache = object : LruCache<String, Entry>(5 * 256 * 256 * 4) {
+    private val cache = object : LruCache<String, Entry>((Runtime.getRuntime().maxMemory() / 8).toInt()) {
         override fun sizeOf(key: String, value: Entry): Int = value.bitmap.byteCount
     }
 

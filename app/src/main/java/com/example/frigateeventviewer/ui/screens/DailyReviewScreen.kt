@@ -49,14 +49,14 @@ fun DailyReviewScreen(
     LaunchedEffect(lifecycle, currentPage, pageIndex) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             if (currentPage == pageIndex) {
-                viewModel.refresh()
+                viewModel.refresh(force = false)
             }
         }
     }
 
     PullToRefreshBox(
         isRefreshing = state is DailyReviewState.Loading,
-        onRefresh = { viewModel.refresh() },
+        onRefresh = { viewModel.refresh(force = true) },
         modifier = Modifier.fillMaxSize()
     ) {
         Scaffold(

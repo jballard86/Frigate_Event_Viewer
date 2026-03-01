@@ -76,14 +76,14 @@ fun DashboardScreen(
     LaunchedEffect(lifecycle, currentPage, pageIndex) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             if (currentPage == pageIndex) {
-                viewModel.refresh()
+                viewModel.refresh(force = false)
             }
         }
     }
 
     PullToRefreshBox(
         isRefreshing = isRefreshing,
-        onRefresh = { viewModel.refresh() },
+        onRefresh = { viewModel.refresh(force = true) },
         modifier = Modifier.fillMaxSize()
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -98,7 +98,7 @@ fun DashboardScreen(
                         stats = s.previous,
                         recentEvent = recentEvent,
                         baseUrl = baseUrl,
-                        onRetry = { viewModel.refresh() },
+                        onRetry = { viewModel.refresh(force = true) },
                         availableHeightDp = availableHeightDp
                     )
                 } else {
@@ -110,12 +110,12 @@ fun DashboardScreen(
                     stats = s.stats,
                     recentEvent = recentEvent,
                     baseUrl = baseUrl,
-                    onRetry = { viewModel.refresh() },
+                    onRetry = { viewModel.refresh(force = true) },
                     availableHeightDp = availableHeightDp
                 )
             }
             is DashboardState.Error -> {
-                DashboardError(message = s.message, onRetry = { viewModel.refresh() })
+                DashboardError(message = s.message, onRetry = { viewModel.refresh(force = true) })
             }
         }
         }

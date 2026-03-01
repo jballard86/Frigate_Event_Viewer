@@ -139,7 +139,7 @@ flowchart TD
 - **ViewModel:** `DashboardViewModel` (factory: `DashboardViewModelFactory`).
 - **States:** `DashboardState` — `Loading(previous?)` | `Success(stats)` | `Error(message, previous?)`.
 - **Data source:** `FrigateApiService.getStats()`.
-- **Refresh triggers:** init, pull-to-refresh, tab selected (current page), app resume (lifecycle `RESUMED` when this tab is visible). **Header:** When this tab is visible, the main-tabs top bar shows a Snooze icon that navigates to the snooze route. **Recent-event video:** In landscape the recent-event card’s video uses the full content height and **RESIZE_MODE_FIT** (fit scaling, no zoom); portrait unchanged (16:9, RESIZE_MODE_ZOOM).
+- **Refresh triggers:** init, pull-to-refresh (force=true), tab selected (force=false), app resume (force=false). Throttled by 5m staleness check. **Header:** When this tab is visible, the main-tabs top bar shows a Snooze icon that navigates to the snooze route. **Recent-event video:** In landscape the recent-event card’s video uses the full content height and **RESIZE_MODE_FIT** (fit scaling, no zoom); portrait unchanged (16:9, RESIZE_MODE_ZOOM).
 
 ---
 
@@ -150,7 +150,7 @@ flowchart TD
 - **ViewModel:** `EventsViewModel` (factory: `EventsViewModelFactory(sharedEventViewModel)` using **CreationExtras**). EventsViewModel is created in MainActivity at the top level of `setContent` with `viewModel(viewModelStoreOwner = activity, factory = EventsViewModelFactory(sharedEventViewModel))`, so it is **activity-scoped**. The factory obtains the Activity’s SavedStateHandle from `extras.createSavedStateHandle()` and Application from `extras[AndroidViewModelFactory.APPLICATION_KEY]`. **Filter mode** (Reviewed/Unreviewed) is stored in that SavedStateHandle so it survives configuration changes (e.g. rotation).
 - **States:** `EventsState` — `Loading(previous?)` | `Success(response)` | `Error(message, previous?)`. Also exposes `baseUrl`, `eventsPageTitle`, `filterToggleButtonLabel`, `displayedEvents` (filtered list; for Unreviewed, server list minus UnreadState.locallyMarkedReviewedEventIds).
 - **Data source:** `FrigateApiService.getEvents(filter = "reviewed" | "unreviewed")` depending on current mode; unreviewed list is server response filtered by UnreadState.locallyMarkedReviewedEventIds. Watchdog uses GET /events?filter=all and UnreadState.pruneToExistingIds.
-- **Refresh triggers:** init, pull-to-refresh, `SharedEventViewModel.eventsRefreshRequested` (payload may include `markedReviewedEventId` or `deletedEventId`), tab selected, app resume.
+- **Refresh triggers:** init, pull-to-refresh (force=true), `SharedEventViewModel.eventsRefreshRequested`, tab selected (force=false), app resume (force=false). Throttled by 5m staleness check.
 
 ---
 
@@ -161,7 +161,7 @@ flowchart TD
 - **ViewModel:** `DailyReviewViewModel` (factory: `DailyReviewViewModelFactory`). Receives viewModel from MainTabsScreen (same instance for the pager).
 - **States:** `DailyReviewState` — `Idle` | `Loading` | `Success(markdownText)` | `Error(message)`.
 - **Data source:** `FrigateApiService.getCurrentDailyReview()`, `FrigateApiService.generateDailyReview()`.
-- **Refresh triggers:** init, pull-to-refresh (`refresh()`), after Generate New Report, tab selected, app resume.
+- **Refresh triggers:** init, pull-to-refresh (force=true), after Generate New Report, tab selected (force=false), app resume (force=false). Throttled by 5m staleness check.
 
 ---
 

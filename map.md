@@ -89,18 +89,18 @@ app/src/main/java/com/example/frigateeventviewer/
 │   │       ├── EventNotification.kt       # FCM payload model (NotificationPhase, EventNotification) and EventNotification.from(data) parser
 │       ├── FcmTokenManager.kt         # FCM token fetch + POST /api/mobile/register via SettingsPreferences baseUrl; registerIfPossible(), registerToken(token) for onNewToken
 │       ├── FrigateFirebaseMessagingService.kt   # FirebaseMessagingService: onNewToken → registerToken; onMessageReceived parses EventNotification; notification image from GET /events snapshot (same as events tab) when available, else FCM paths; handleNew, handleSnapshotReady, handleClipReady
-│       ├── NotificationImageCache.kt  # In-memory LruCache of scaled notification bitmaps by ce_id; 72h TTL; removeForEventPath() called from EventDetailViewModel on delete
+│       ├── NotificationImageCache.kt  # In-memory LruCache of scaled notification bitmaps by ce_id; hard memory ceiling (1/8th maxMemory) + 72h TTL; removeForEventPath() called from EventDetailViewModel on delete
 │       └── NotificationActionReceiver.kt       # BroadcastReceiver: MARK_REVIEWED (POST /viewed, UnreadState.recordMarkedReviewed, applyBadge, cancel notification, Toast), KEEP (POST /keep, update notification "Saved", Toast); exported=false
 │   └── util/
 │       └── EventMatching.kt           # eventMatchesCeId(event, ceId), findEventByCeId(events, ceId); shared by MainActivity deep link and FrigateFirebaseMessagingService notification image
 └── ui/
     ├── screens/                       # One screen = one *Screen.kt + one *ViewModel.kt (and optional *ViewModelFactory)
-    │   ├── DashboardScreen.kt         # Dashboard UI + DashboardViewModel/Factory
-    │   ├── DailyReviewScreen.kt       # Daily review Markdown UI + DailyReviewViewModel/Factory
+    │   ├── DashboardScreen.kt         # Dashboard UI + DashboardViewModel/Factory; 5m refresh throttle
+    │   ├── DailyReviewScreen.kt       # Daily review Markdown UI + DailyReviewViewModel/Factory; 5m refresh throttle
     │   ├── DeepLinkViewModel.kt       # Pending deep-link ce_id and resolve trigger; used by MainActivity for buffer://event_detail/{ce_id}
     │   ├── EventDetailScreen.kt       # Event detail: video (Media3) or snapshot placeholder when no clip; actions, metadata + EventDetailViewModel/Factory
     │   ├── EventNotFoundScreen.kt     # Shown when deep link cannot resolve to an event; Refresh retries resolution
-    │   ├── EventsScreen.kt            # Events list: two modes (Reviewed/Unreviewed), full-width toggle; dynamic title; filters by UnreadState.locallyMarkedReviewedEventIds; EventsViewModel activity-scoped (MainActivity), filter mode in Activity SavedStateHandle via CreationExtras; LazyColumn uses stable key (event_id) and EventCardItem display model for list performance
+    │   ├── EventsScreen.kt            # Events list: two modes (Reviewed/Unreviewed), full-width toggle; dynamic title; filters by UnreadState.locallyMarkedReviewedEventIds; EventsViewModel activity-scoped (MainActivity), filter mode in Activity SavedStateHandle via CreationExtras; LazyColumn uses stable key (event_id) and EventCardItem display model for list performance; 5m refresh throttle; watchdog prunes UnreadState
 │   ├── LiveScreen.kt              # Live tab: Select Camera dropdown from shared Go2RtcStreamsRepository state, preselects default from Settings when in list; live video player (stream URL: api/go2rtc/api/stream.mp4 via Frigate proxy 5000 only; 16:9, 12.dp; ExoPlayer with low-latency LoadControl and VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING; Connecting/Loading status; error below player shows exact reason e.g. HTTP 404); LiveViewModel/Factory (activity-scoped, created in MainActivity, passed via MainTabsScreen)
 │   ├── MainTabsScreen.kt          # HorizontalPager + bottom navigation hosting Live/Dashboard/Events/DailyReview; header title from tab; Snooze (Dashboard only) + Settings; tab index from MainTabsViewModel (SavedStateHandle) for rotation; default tab Dashboard (index 1); landscape: bottom bar hidden by default, AnimatedVisibility (expand/shrink) for show/hide; floating drag handle (circle+chevron, zIndex+offset) when bar closed; handle inside bottomBar Column above NavigationBar when bar open (transparent strip); alpha from SettingsPreferences
     │   ├── MainTabsViewModel.kt       # Activity-scoped: selectedTabIndex in SavedStateHandle so main-tabs page survives configuration change

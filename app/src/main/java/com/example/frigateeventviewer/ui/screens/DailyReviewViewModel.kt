@@ -49,6 +49,7 @@ private fun parseErrorFromBody(exception: HttpException, fallback: String): Stri
 class DailyReviewViewModel(application: Application) : AndroidViewModel(application) {
 
     private val preferences = SettingsPreferences(application)
+    private var lastFetchTime = 0L
 
     private val _state = MutableStateFlow<DailyReviewState>(DailyReviewState.Loading)
     val state: StateFlow<DailyReviewState> = _state.asStateFlow()
@@ -73,6 +74,7 @@ class DailyReviewViewModel(application: Application) : AndroidViewModel(applicat
                 val service = ApiClient.createService(baseUrl)
                 val response = service.getCurrentDailyReview()
                 _state.value = DailyReviewState.Success(response.summary)
+                lastFetchTime = System.currentTimeMillis()
             } catch (e: HttpException) {
                 _state.value = DailyReviewState.Error(parseErrorFromBody(e, "Failed to load report"))
             } catch (e: Exception) {
@@ -86,7 +88,10 @@ class DailyReviewViewModel(application: Application) : AndroidViewModel(applicat
     /**
      * Re-fetches the current report without regenerating. Used for pull-to-refresh and tab/resume.
      */
-    fun refresh() {
+    fun refresh(force: Boolean = false) {
+        if (!force && lastFetchTime > 0 && System.currentTimeMillis() - lastFetchTime < 5 * 60 * 1000 && _state.value is DailyReviewState.Success) {
+            return
+        }
         fetchDailyReview()
     }
 
