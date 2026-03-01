@@ -1,82 +1,85 @@
-# Frigate Event Viewer
+# APFrigate Event Viewer
 
-## The Intelligent Command Center for Your Home Security
+The native, intelligent Android command center for your Frigate NVR system.
 
-**Frigate Event Viewer** is a sophisticated, native Android application designed to orchestrate and visualize the data captured by your Frigate NVR system. It acts as the primary mobile interface for the **[Frigate Event Buffer](https://github.com/jballard86/frigate-event-buffer)**, a state-aware backend that transforms raw security footage into a rich, narrative-driven history of your property.
-
-Whether you are on your local network or accessing your system remotely Tailscale, the app provides a seamless, high-performance interface for monitoring every camera in your ecosystem.
+Designed as the primary mobile interface for the **[Frigate Event Buffer](https://github.com/jballard86/frigate-event-buffer)**, this app transforms raw security footage into a rich, narrative-driven history of your property. Experience real-time monitoring, AI-summarized daily reviews, and rich interactive notifications directly on your Android device.
 
 ---
 
-## Core Pillars of the Application
+## Features
 
-### 1. Narrative-Driven Event Lifecycle
+### Live Monitoring & Dashboard
 
-Powered by the [Frigate Event Buffer](https://github.com/jballard86/frigate-event-buffer), this system tracks every security event through a multi-stage intelligent lifecycle:
+- **Low-Latency Live Streams:** View real-time camera feeds powered by Frigate's internal `go2rtc` proxy.
+- **Tactical Dashboard:** A real-time overview displaying the most recent high-interest event, daily/weekly stats, and backend system health.
+- **Fluid Navigation:** Native Jetpack Compose UI with horizontal swipeable tabs, synced bottom navigation, and full-width swipe-back gestures.
 
-- **Detection**: Instantly identifies activity via MQTT and begins the evidence collection process.
-- **Context**: AI analyzes the scene to provide a high-level understanding of the activity.
-- **Finalization**: Clips are exported and organized with multi-camera evidence for a complete chronological picture.
-- **Review**: Large Language Models (LLMs) summarize the event into a concise, human-readable narrative.
+### AI-Powered Event Intelligence
 
-### 2. High-Performance Dashboard
+- **Daily Reviews:** Read a concise, Markdown-formatted summary of the day's highlights, categorized by threat level and generated via LLMs.
+- **Multi-Cam Evidence Locker:** Seamlessly track subjects across multiple cameras as they move through your property—consolidated into a single cohesive story.
+- **Deep Timeline:** Dive into the technical timeline of notifications, video exports, and AI analysis for any given event.
 
-The Dashboard serves as your tactical overview, providing real-time data and immediate access to recent activity:
+### Rich, Actionable Notifications
 
-- **Live Evidence**: An embedded video player at the top of the dashboard instantly plays the most recent high-interest event.
-- **Smart Stats**: Monitor event frequency (Daily, Weekly, Monthly) and storage health at a glance.
-- **System Health**: Real-time monitoring of connectivity to the buffer, server uptime, and active processing threads.
+- **Phase-Aware FCM Alerts:** Real-time push notifications that update dynamically as an event progresses from a snapshot to a full video clip.
+- **Inline Actions:** Mark events as reviewed or keep critical footage permanently, right from the Android notification shade.
+- **Unread Badges:** App icon badges stay perfectly synced with your unreviewed event queue for immediate visibility.
 
-### 3. Native Fluidity with Gesture Navigation
+### Advanced Event Management
 
-The app is built using Jetpack Compose to ensure a modern, responsive feel that matches the quality of flagship mobile applications:
-
-- **Swipeable Tabs**: Seamlessly move between the Dashboard, Events, and Daily Review using natural horizontal swipes.
-- **Synced Navigation**: The bottom navigation bar stays perfectly in sync with your gestures, providing a consistent sense of location.
-- **Media3 Integration**: High-performance video playback using the ExoPlayer engine with standard controls and intelligent aspect-ratio handling.
-
----
-
-## Key Features
-
-### Intelligent Daily Reviews
-
-The app leverages the buffer's GenAI capabilities to generate a comprehensive daily security report. Instead of scrubbing through hours of footage, users can read a Markdown summary of the day’s highlights, organized by threat level and time.
-
-### Multi-Cam Evidence Locker
-
-The backend automatically consolidates events that span across multiple cameras into a single "Consolidated Event." This ensures that if a subject moves from one camera's field of view to another, the journey is presented as one cohesive story.
-
-### Smart Retention & Cleanup
-
-To optimize hardware performance, the system manages a configurable rolling evidence locker. It automatically cleans up old footage and snapshots while allowing critical events to be manually saved and exempted from deletion.
-
-### Event Management Tools
-
-- **Mark as Reviewed**: Quickly clear unreviewed queues with a single tap.
-- **Save for Later**: Move critical events into a permanent folder directly from the mobile interface.
-- **Deep Timeline**: Review the raw technical timeline of every notification, export, and AI analysis entry generated by the buffer.
+- **Snooze Control:** Temporarily mute notifications or AI processing for specific cameras using convenient presets (30m, 1h, 2h).
+- **Smart Retention:** Protect critical footage from automatic cleanup by saving it to a permanent locker.
+- **Review Queue:** Easily filter between reviewed and unreviewed events, and clear your queue with a single tap.
 
 ---
 
 ## Technical Architecture
 
-The app is the front-end companion to a specialized Python backend:
+Built with modern Android development practices to ensure high performance and reliability:
 
-- **Frigate Event Buffer Integration**: Built specifically to interface with the [frigate-event-buffer](https://github.com/jballard86/frigate-event-buffer) processing pipeline.
-- **Production Reliability**: The backend operates on a Gunicorn WSGI server to ensure stable, multi-threaded communication with the Android client.
-- **AI Integration**: Employs Google Gemini and local models to provide descriptive titles and scene narratives.
-- **Efficient Networking**: Utilizing OkHttp with optimized connection pooling for instant data retrieval.
-- **Ecosystem Compatibility**: Fully compatible with Home Assistant, Frigate NVR, and Unraid environments.
+- **100% Kotlin & Jetpack Compose:** A declarative, responsive, and fluid single-Activity user interface.
+- **Media3 / ExoPlayer:** High-performance video playback with intelligent aspect-ratio handling and custom streaming thumbnail fetchers.
+- **OkHttp & Retrofit:** Fast, connection-pooled networking to interface with the Frigate Event Buffer API.
+- **Coil:** Efficient image loading and in-memory caching for snapshots and notification thumbnails.
+- **DataStore:** Modern asynchronous preferences management for server configurations and UI state.
 
 ---
 
 ## Setup & Connectivity
 
-The application is designed for private, secure environments.
+The application is designed for private, secure environments and works seamlessly over local networks or VPNs like Tailscale.
 
-- **Direct Connection**: Connect the app to your Frigate Event Buffer’s local IP and Port (default 5055).
-- **Remote Access**: Fully compatible with Tailscale or similar VPN solutions for secure, encrypted access while away from home.
-- **Configuration**: Manage server addresses and user preferences through the integrated Settings menu.
-- **Firebase (FCM)**: For push notifications, the app requires `app/google-services.json` from the Firebase Console (Android app in your project). Add the file to the `app/` module; it is gitignored. The Google Services plugin uses it at build time for FCM and related configuration.
+### Prerequisites
 
+- A running instance of [Frigate NVR](https://docs.frigate.video/).
+- A running instance of the [Frigate Event Buffer](https://github.com/jballard86/frigate-event-buffer) backend.
+
+### Network Setup & Remote Access
+
+If you are behind a CGNAT or prefer not to use port forwarding, **Tailscale** is the recommended way to securely connect your phone to Frigate and the Event Buffer remotely (traditional port forwarding may also work if your ISP allows it, but Tailscale is the officially tested solution).
+
+**Tailscale Configuration Steps:**
+
+1. **Subnet Route:** Set up a Tailscale subnet route on a machine on your LAN (e.g., your Unraid server).
+2. **Backend Access:** The Frigate Event Buffer must be reachable via Tailscale. Use the Tailscale IP of the machine running the backend (e.g., `http://<server-tailscale-ip>:5050`).
+3. **Phone Setup:** On your Android device, ensure the Tailscale app is configured to use that subnet route so it can reach your LAN.
+4. **Frigate Access:** Frigate must also be on Tailscale (or otherwise reachable via the same Tailscale network).
+5. **App Configuration:** In the Android app's settings, use your server's **Tailscale IP** for the Frigate address, instead of the local LAN IP, no port is needed with Frigate the App uses the frigate API nativly.
+
+### Push Notifications (Firebase)
+
+To enable real-time push notifications, the app requires Firebase Cloud Messaging (FCM):
+
+1. Create a project in your Firebase Console and add an Android app.
+2. Download the `google-services.json` file.
+3. Place it in the `app/` directory of this Android project (it is gitignored by default).
+4. Build the app. The Google Services plugin will automatically configure FCM for the project.
+5. Generate a new private key from your Firebase project settings (Service Accounts tab) and save it as a JSON file.
+6. Place this service account JSON file on your backend server to allow the Frigate Event Buffer to send push notifications to the app.
+
+---
+
+## License & Privacy
+
+This project is built for secure, self-hosted environments. All AI analysis and event processing happens on your configured backend, keeping your data and privacy strictly within your control.
