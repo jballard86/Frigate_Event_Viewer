@@ -20,6 +20,8 @@
 - **`.gitignore`** — Git ignore rules for Android/Gradle builds, IDE metadata, and local environment files.
 - **`docs/`** — Project documentation (e.g. `MOBILE_API_CONTRACT.md`, `UI_MAP.md`). No app source code here.
   - **`UI_MAP.md`** — Compose UI and navigation flow (routes, screens, ViewModels). Keep it updated when adding or changing screens or routes.
+  - **`MOBILE_API_CONTRACT.md`** — API contract for the Android client; all API usage must align with it.
+  - **`BUFFER_FOLDER_STRUCTURE.md`** — Backend server folder and file layout (events/, saved/, daily_reports/), naming conventions, and how `/files/` paths map to storage; cross-reference when implementing or documenting file/media paths.
   - **`CODEBASE_ANALYSIS.md`** — Codebase analysis: file list with LOC, totals (with/without tests), test-coverage gaps, and refactoring/duplication notes. Update when doing large-scale analysis or when the structure changes significantly.
 - **`app/`** — Android application module (Gradle). All app source lives under `app/src/main/`.
 
@@ -149,6 +151,7 @@ app/src/main/java/com/example/frigateeventviewer/
 4. **Media URLs**
    - API returns paths (e.g. `hosted_snapshot`). Full URL = `{baseUrl}{path}`.
    - Use `com.example.frigateeventviewer.ui.util.buildMediaUrl(baseUrl, path)` so double slashes are avoided.
+   - For backend storage layout (events/, saved/, daily_reports/), file naming, and how `/files/` paths map to disk, see `docs/BUFFER_FOLDER_STRUCTURE.md`.
 
 5. **Coil**
    - `FrigateEventViewerApplication` implements `ImageLoaderFactory` and registers `StreamingVideoFetcher.Factory()` so .mp4 thumbnails are fetched by streaming (MediaMetadataRetriever, frame at 2s) without full-file download. Use the default Coil `ImageLoader`; do not create ad-hoc loaders that bypass the fetcher.

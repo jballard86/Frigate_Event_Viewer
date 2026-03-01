@@ -2,6 +2,8 @@
 
 **Source of truth for the native Android client** (Jetpack Compose + Retrofit) that talks to the Frigate Event Buffer Flask backend. Use this document to define Retrofit interfaces, data classes, and media URL construction.
 
+**Backend storage layout:** For the server's folder structure (events/, saved/, daily_reports/), file naming conventions, and how `/files/` paths correspond to on-disk paths, see `docs/BUFFER_FOLDER_STRUCTURE.md`. That document also lists the same file-serving and daily-review endpoints from the server's perspective.
+
 ## Base URL
 
 - All paths in this document are **relative** to the server base URL.
@@ -293,6 +295,8 @@ Used in `/events`, `/events/<camera>`, and anywhere the API returns a list or si
 ---
 
 ## 2. Media / Proxy
+
+The backend serves files under `STORAGE_PATH` via `GET /files/<path:filename>`. Paths (e.g. `events/{ce_id}/{camera}/snapshot.jpg`, `saved/events/{ce_id}/...`) follow the layout described in `docs/BUFFER_FOLDER_STRUCTURE.md`.
 
 ### 2.1 Serve stored file
 
@@ -911,6 +915,23 @@ The Live tab populates its "Select Camera" dropdown from the **Frigate** go2rtc 
 ---
 
 **App usage:** The Android app uses **§7.1** (GET `/api/events/unread_count`) to drive the app icon badge on resume, and **§8** (Snooze: GET/POST/DELETE `/api/snooze`) for the Snooze screen (per-camera snooze with duration presets and Notification/AI toggles). The **Live** tab uses **§10** (GET `/api/go2rtc/streams` via Frigate base URL from Frigate IP setting) to populate the camera dropdown and plays the selected stream **exclusively via the Frigate proxy** (port 5000) MP4 URL above. **Settings** also calls GET `/api/go2rtc/streams` to show a "Default camera" dropdown; the chosen value is stored and used to preselect the Live tab camera when available.
+
+---
+
+## Merge note (combined from duplicate)
+
+This document was merged from two versions. **`MOBILE_API_CONTRACT.md`** (this file) was the longer version and is the single source of truth. The duplicate **`MOBILE_API_CONTRACT (2).md`** was missing the following, which remain only in this master:
+
+| Location | In master only |
+|----------|-----------------|
+| **Intro** | Paragraph linking to `docs/BUFFER_FOLDER_STRUCTURE.md` for backend storage layout and file-serving/daily-review from server perspective. |
+| **§2 (Media)** | Intro sentence: backend serves files under `STORAGE_PATH` via `GET /files/<path:filename>`, paths follow `BUFFER_FOLDER_STRUCTURE.md`. |
+| **§8.1 (Set snooze)** | **App note:** Android app defaults both snooze fields to **false** so a quick Snooze does not mute notifications unless the user turns "Notification Snooze" on. |
+| **§9** | **FCM data payload** — full table of FCM data keys (`ce_id`, `phase`, `clear_notification`, `threat_level`, `camera`, `live_frame_proxy`, `hosted_snapshot`, etc.) and note on building media URLs with `buildMediaUrl(baseUrl, path)`. |
+| **§10** | **Frigate / go2rtc API (Live tab)** — Frigate IP setting, `GET /api/go2rtc/streams`, MP4 playback via Frigate proxy, ExoPlayer usage. |
+| **End** | **App usage** paragraph summarizing use of §7.1 (unread count/badge), §8 (Snooze), §10 (Live tab, go2rtc, default camera in Settings). |
+
+Sections 1–8 and all endpoint details were otherwise the same between the two files.
 
 ---
 
