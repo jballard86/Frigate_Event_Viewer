@@ -54,6 +54,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.example.frigateeventviewer.data.model.Event
 import com.example.frigateeventviewer.data.model.StatsResponse
+import com.example.frigateeventviewer.ui.util.EventMediaPath
 import com.example.frigateeventviewer.ui.util.buildMediaUrl
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -315,9 +316,10 @@ private fun RecentEventCard(
             return@Card
         }
 
-        val clipPath = event.hosted_clip?.takeIf { it.isNotBlank() }
-            ?: event.hosted_clips.firstOrNull()?.url
-        val clipUrl = buildMediaUrl(baseUrl, clipPath)
+        val clipCandidateUrls = EventMediaPath.getClipPathCandidates(event)
+            .mapNotNull { buildMediaUrl(baseUrl, it) }
+            .distinct()
+        val clipUrl = clipCandidateUrls.firstOrNull()
 
         if (clipUrl == null) {
             Column(

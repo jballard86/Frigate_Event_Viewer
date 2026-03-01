@@ -33,7 +33,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,9 +56,11 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.example.frigateeventviewer.data.model.Event
+import com.example.frigateeventviewer.ui.util.EventMediaPath
 import com.example.frigateeventviewer.ui.util.buildMediaUrl
 import com.example.frigateeventviewer.ui.util.SwipeBackBox
 import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
 import java.time.Instant
 import java.time.ZoneId
@@ -195,9 +199,12 @@ private fun EventVideoSection(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    val clipPath = event.hosted_clip?.takeIf { it.isNotBlank() }
-        ?: event.hosted_clips.firstOrNull()?.url
-    val clipUrl = buildMediaUrl(baseUrl, clipPath)
+    val clipCandidateUrls = remember(event, baseUrl) {
+        EventMediaPath.getClipPathCandidates(event).mapNotNull { buildMediaUrl(baseUrl, it) }.distinct()
+    }
+    val placeholderCandidateUrls = remember(event, baseUrl) {
+        EventMediaPath.getPlaceholderPathCandidates(event).mapNotNull { buildMediaUrl(baseUrl, it) }.distinct()
+    }
 
     val videoModifier = if (availableHeightDp != null) {
         Modifier.fillMaxWidth().height(availableHeightDp)
@@ -205,20 +212,13 @@ private fun EventVideoSection(
         Modifier.fillMaxWidth().aspectRatio(16f / 9f)
     }.clip(RoundedCornerShape(12.dp))
 
-    // Placeholder: same source as events tab (hosted_snapshot else hosted_clip) when no clip yet.
-    val placeholderPath = when {
-        !event.hosted_snapshot.isNullOrBlank() -> event.hosted_snapshot
-        else -> event.hosted_clip?.takeIf { it.isNotBlank() } ?: event.hosted_clips.firstOrNull()?.url
-    }
-    val placeholderUrl = buildMediaUrl(baseUrl, placeholderPath)
     val isLandscape = availableHeightDp != null
     val placeholderScale = if (isLandscape) ContentScale.Fit else ContentScale.Crop
 
-    if (clipUrl == null) {
-        if (!placeholderUrl.isNullOrBlank()) {
-            AsyncImage(
-                model = ImageRequest.Builder(context).data(placeholderUrl).build(),
-                contentDescription = "Event snapshot",
+    if (clipCandidateUrls.isEmpty()) {
+        if (placeholderCandidateUrls.isNotEmpty()) {
+            EventPlaceholderImage(
+                candidateUrls = placeholderCandidateUrls,
                 modifier = videoModifier,
                 contentScale = placeholderScale
             )
@@ -228,7 +228,7 @@ private fun EventVideoSection(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "No clip available",
+                    text = "No video or image available for this event",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -237,58 +237,101 @@ private fun EventVideoSection(
         return
     }
 
-    val player = remember(event.camera, event.subdir, clipPath) {
-        buildMediaUrl(baseUrl, clipPath)?.let { url ->
-            ExoPlayer.Builder(context).build().apply {
-                setMediaItem(MediaItem.fromUri(url.toUri()))
-                prepare()
-                repeatMode = Player.REPEAT_MODE_OFF
-                playWhenReady = false
-            }
+    val firstClipUrl = clipCandidateUrls.first()
+    val player = remember(event.camera, event.subdir, firstClipUrl) {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(firstClipUrl.toUri()))
+            prepare()
+            repeatMode = Player.REPEAT_MODE_OFF
+            playWhenReady = false
         }
     }
 
-    if (player != null) {
-        DisposableEffect(lifecycleOwner) {
-            val observer = LifecycleEventObserver { _, lifecycleEvent ->
-                when (lifecycleEvent) {
-                    Lifecycle.Event.ON_PAUSE -> player.pause()
-                    else -> {}
-                }
-            }
-            lifecycleOwner.lifecycle.addObserver(observer)
-            onDispose {
-                lifecycleOwner.lifecycle.removeObserver(observer)
-                player.release()
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, lifecycleEvent ->
+            when (lifecycleEvent) {
+                Lifecycle.Event.ON_PAUSE -> player.pause()
+                else -> {}
             }
         }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            player.release()
+        }
+    }
 
-        val resizeMode = if (isLandscape) {
-            AspectRatioFrameLayout.RESIZE_MODE_FIT
-        } else {
-            AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+    val resizeMode = if (isLandscape) {
+        AspectRatioFrameLayout.RESIZE_MODE_FIT
+    } else {
+        AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+    }
+    AndroidView(
+        factory = {
+            PlayerView(context).apply {
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+                setResizeMode(resizeMode)
+                controllerShowTimeoutMs = 1000
+                this.player = player
+            }
+        },
+        update = { playerView ->
+            playerView.player = player
+            playerView.setResizeMode(resizeMode)
+        },
+        modifier = videoModifier,
+        onRelease = { playerView ->
+            playerView.player = null
         }
-        AndroidView(
-            factory = {
-                PlayerView(context).apply {
-                    layoutParams = ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                    )
-                    setResizeMode(resizeMode)
-                    controllerShowTimeoutMs = 1000
-                    this.player = player
+    )
+}
+
+/**
+ * Tries each candidate URL in order; shows first successful image or "No preview" when all fail.
+ */
+@Composable
+private fun EventPlaceholderImage(
+    candidateUrls: List<String>,
+    modifier: Modifier,
+    contentScale: ContentScale
+) {
+    val context = LocalContext.current
+    var currentIndex by remember { mutableStateOf(0) }
+    val url = candidateUrls.getOrNull(currentIndex)
+    val imageRequest = url?.let {
+        remember(it) { ImageRequest.Builder(context).data(it).build() }
+    }
+
+    if (url != null && currentIndex < candidateUrls.size && imageRequest != null) {
+        AsyncImage(
+            model = imageRequest,
+            contentDescription = "Event snapshot",
+            modifier = modifier,
+            contentScale = contentScale,
+            onState = { state ->
+                if (state is AsyncImagePainter.State.Error) {
+                    if (currentIndex + 1 < candidateUrls.size) {
+                        currentIndex += 1
+                    } else {
+                        currentIndex = candidateUrls.size
+                    }
                 }
-            },
-            update = { playerView ->
-                playerView.player = player
-                playerView.setResizeMode(resizeMode)
-            },
-            modifier = videoModifier,
-            onRelease = { playerView ->
-                playerView.player = null
             }
         )
+    } else {
+        Box(
+            modifier = modifier,
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "No video or image available for this event",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 

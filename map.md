@@ -113,6 +113,7 @@ app/src/main/java/com/example/frigateeventviewer/
     │   ├── Color.kt
     │   └── Type.kt
     └── util/
+        ├── EventMediaPath.kt          # Candidate paths for event thumbnails/clips: primary (API path) + fallback (subdir/event_id swap for single-camera, ce_ prefix for consolidated); used by EventsScreen, EventDetailScreen, DashboardScreen
         ├── MediaUrl.kt                # buildMediaUrl(baseUrl, path) for thumbnails/snapshots
         ├── StreamingVideoFetcher.kt  # Coil Fetcher for .mp4 URIs; streams via MediaMetadataRetriever, frame at 2s
         └── SwipeBack.kt               # SwipeBackBox: full-width swipe-back on nested screens (rightward swipe from anywhere; vertical scroll preserved)

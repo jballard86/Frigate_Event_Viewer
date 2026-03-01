@@ -35,7 +35,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,6 +52,7 @@ import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
 import com.example.frigateeventviewer.data.model.Event
+import com.example.frigateeventviewer.ui.util.EventMediaPath
 import com.example.frigateeventviewer.ui.util.buildMediaUrl
 import java.time.Instant
 import java.time.ZoneId
@@ -211,7 +214,7 @@ fun EventsScreen(
  */
 private data class EventCardItem(
     val event_id: String,
-    val thumbnailPath: String?,
+    val thumbnailPathCandidates: List<String>,
     val formattedTime: String,
     val cameraLabel: String,
     val threat_level: Int,
@@ -220,7 +223,7 @@ private data class EventCardItem(
 
 private fun eventToCardItem(event: Event): EventCardItem = EventCardItem(
     event_id = event.event_id,
-    thumbnailPath = event.hosted_snapshot?.takeIf { it.isNotBlank() } ?: event.hosted_clip,
+    thumbnailPathCandidates = EventMediaPath.getThumbnailPathCandidates(event),
     formattedTime = formatTimestamp(event.timestamp),
     cameraLabel = formatCameraName(event.camera),
     threat_level = event.threat_level,
@@ -237,7 +240,11 @@ private fun EventCard(
     val density = LocalDensity.current
     val widthPx = with(density) { 80.dp.roundToPx() }
     val heightPx = with(density) { 60.dp.roundToPx() }
-    val thumbnailUrl = buildMediaUrl(baseUrl, item.thumbnailPath)
+    val candidateUrls = remember(item.thumbnailPathCandidates, baseUrl) {
+        item.thumbnailPathCandidates.mapNotNull { buildMediaUrl(baseUrl, it) }.distinct()
+    }
+    var currentUrlIndex by remember { mutableStateOf(0) }
+    val thumbnailUrl = candidateUrls.getOrNull(currentUrlIndex)
     val imageRequest = thumbnailUrl?.let { url ->
         remember(url, widthPx, heightPx) {
             ImageRequest.Builder(context)
@@ -280,26 +287,43 @@ private fun EventCard(
                     .clip(RoundedCornerShape(8.dp))
                     .background(MaterialTheme.colorScheme.surface)
             ) {
-                if (thumbnailUrl != null) {
-                    AsyncImage(
-                        model = imageRequest!!,
-                        contentDescription = "Event snapshot",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                        onState = { state ->
-                            if (state is AsyncImagePainter.State.Error) {
-                                Log.e(
-                                    "CoilError",
-                                    "Thumbnail failed: ${state.result.throwable.message}",
-                                    state.result.throwable
-                                )
+                if (candidateUrls.isNotEmpty() && currentUrlIndex < candidateUrls.size) {
+                    val showPlaceholder = currentUrlIndex >= candidateUrls.size
+                    if (showPlaceholder) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "No preview",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(8.dp),
+                            tint = MaterialTheme.colorScheme.outline
+                        )
+                    } else {
+                        AsyncImage(
+                            model = imageRequest!!,
+                            contentDescription = "Event snapshot",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                            onState = { state ->
+                                if (state is AsyncImagePainter.State.Error) {
+                                    Log.e(
+                                        "CoilError",
+                                        "Thumbnail failed: ${state.result.throwable.message}",
+                                        state.result.throwable
+                                    )
+                                    if (currentUrlIndex + 1 < candidateUrls.size) {
+                                        currentUrlIndex += 1
+                                    } else {
+                                        currentUrlIndex = candidateUrls.size
+                                    }
+                                }
                             }
-                        }
-                    )
+                        )
+                    }
                 } else {
                     Icon(
                         imageVector = Icons.Default.Warning,
-                        contentDescription = null,
+                        contentDescription = "No preview",
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(8.dp),
