@@ -71,15 +71,16 @@ Package base: `com.example.frigateeventviewer`.
 
 ```
 app/src/main/java/com/example/frigateeventviewer/
-├── FrigateEventViewerApplication.kt   # Application: Coil ImageLoaderFactory (StreamingVideoFetcher); "Security Alerts" notification channel (PushConstants.CHANNEL_ID_SECURITY_ALERTS)
-├── MainActivity.kt                    # Single Activity; Compose; NavHost (settings, main_tabs, event_not_found, event_detail, snooze); handles deep link buffer://event_detail/{ce_id} via DeepLinkViewModel and EventMatching.findEventByCeId
+├── FrigateEventViewerApplication.kt   # Application: Coil ImageLoaderFactory (StreamingVideoFetcher); go2RtcStreamsRepository (shared go2rtc cache); "Security Alerts" notification channel
+├── MainActivity.kt                    # Single Activity; Compose; on load triggers go2RtcStreamsRepository.refresh(); NavHost (settings, main_tabs, event_not_found, event_detail, snooze); handles deep link buffer://event_detail/{ce_id} via DeepLinkViewModel and EventMatching.findEventByCeId
 ├── data/
+│   ├── Go2RtcStreamsRepository.kt    # Shared cache: go2rtc stream names (Go2RtcStreamsState); refresh() on app load and when Frigate IP saved; used by Settings and Live
 │   ├── api/
 │   │   ├── ApiClient.kt               # Retrofit/OkHttp factory; createService(baseUrl)
-│   │   └── FrigateApiService.kt       # Retrofit: getEvents, getCameras, getStats, getStatus, getCurrentDailyReview, generateDailyReview, markViewed, keepEvent, deleteEvent, registerDevice, getSnoozeList, setSnooze, clearSnooze, getUnreadCount
+│   │   └── FrigateApiService.kt       # Retrofit: getEvents, getCameras, getStats, getStatus, getCurrentDailyReview, generateDailyReview, markViewed, keepEvent, deleteEvent, registerDevice, getSnoozeList, setSnooze, clearSnooze, getUnreadCount, getGo2RtcStreams
 │   ├── model/                         # DTOs for API responses (Event, EventsResponse, StatsResponse, CamerasResponse, SnoozeRequest, SnoozeResponse, SnoozeEntry, UnreadCountResponse, DailyReviewResponse, etc.)
 │   ├── preferences/
-│   │   └── SettingsPreferences.kt     # DataStore: baseUrl flow, saveBaseUrl, normalizeBaseUrl; landscapeTabIconAlpha flow, saveLandscapeTabIconAlpha
+│   │   └── SettingsPreferences.kt     # DataStore: baseUrl flow, saveBaseUrl, normalizeBaseUrl; frigateIp flow, saveFrigateIp, getFrigateIpOnce; buildFrigateApiBaseUrl (HTTP, port 5000); defaultLiveCamera flow, saveDefaultLiveCamera, getDefaultLiveCameraOnce; landscapeTabIconAlpha flow, saveLandscapeTabIconAlpha
 │   ├── push/
 │   │       ├── PushConstants.kt           # CHANNEL_ID_SECURITY_ALERTS; notificationId(ce_id) for deterministic slotting; used by Application and FrigateFirebaseMessagingService
 │   │       ├── UnreadState.kt             # Single source of truth: last server unread count + locally marked reviewed IDs; badge and Events list both read from it
@@ -99,11 +100,11 @@ app/src/main/java/com/example/frigateeventviewer/
     │   ├── EventDetailScreen.kt       # Event detail: video (Media3) or snapshot placeholder when no clip; actions, metadata + EventDetailViewModel/Factory
     │   ├── EventNotFoundScreen.kt     # Shown when deep link cannot resolve to an event; Refresh retries resolution
     │   ├── EventsScreen.kt            # Events list: two modes (Reviewed/Unreviewed), full-width toggle; dynamic title; filters by UnreadState.locallyMarkedReviewedEventIds; EventsViewModel activity-scoped (MainActivity), filter mode in Activity SavedStateHandle via CreationExtras
-    │   ├── LiveScreen.kt              # Live tab UI: Select Camera dropdown (placeholder cameras 1–5), "Coming soon" body; no ViewModel
-    │   ├── MainTabsScreen.kt          # HorizontalPager + bottom navigation hosting Live/Dashboard/Events/DailyReview; header title from tab; Snooze (Dashboard only) + Settings; tab index from MainTabsViewModel (SavedStateHandle) for rotation; default tab Dashboard (index 1); landscape: bottom bar hidden by default, AnimatedVisibility (expand/shrink) for show/hide; floating drag handle (circle+chevron, zIndex+offset) when bar closed; handle inside bottomBar Column above NavigationBar when bar open (transparent strip); alpha from SettingsPreferences
+│   ├── LiveScreen.kt              # Live tab: Select Camera dropdown from shared Go2RtcStreamsRepository state, preselects default from Settings when in list; "Coming soon" body; LiveViewModel/Factory
+│   ├── MainTabsScreen.kt          # HorizontalPager + bottom navigation hosting Live/Dashboard/Events/DailyReview; header title from tab; Snooze (Dashboard only) + Settings; tab index from MainTabsViewModel (SavedStateHandle) for rotation; default tab Dashboard (index 1); landscape: bottom bar hidden by default, AnimatedVisibility (expand/shrink) for show/hide; floating drag handle (circle+chevron, zIndex+offset) when bar closed; handle inside bottomBar Column above NavigationBar when bar open (transparent strip); alpha from SettingsPreferences
     │   ├── MainTabsViewModel.kt       # Activity-scoped: selectedTabIndex in SavedStateHandle so main-tabs page survives configuration change
     │   ├── SharedEventViewModel.kt    # Activity-scoped: selectedEvent for event_detail; requestEventsRefresh(markedReviewedEventId?, deletedEventId?) for events list + local designation
-    │   ├── SettingsScreen.kt          # Server URL input + SettingsViewModel/Factory
+    │   ├── SettingsScreen.kt          # Server URL + Frigate IP + Default camera (Live tab) dropdown from go2rtc streams; SettingsViewModel/Factory
     │   ├── SnoozeScreen.kt            # Per-camera snooze: presets 30m/1h/2h, AI vs Notification toggles, camera list with Snooze/Clear
     │   └── SnoozeViewModel.kt         # SnoozeViewModel/Factory: getCameras, getSnoozeList, setSnooze, clearSnooze
     ├── theme/
@@ -133,6 +134,7 @@ app/src/main/java/com/example/frigateeventviewer/
 2. **API calls**
    - ViewModels get base URL from `SettingsPreferences.getBaseUrlOnce()` (or collect `baseUrl` flow).
    - They create the service with `ApiClient.createService(baseUrl)` and call `FrigateApiService` suspend functions.
+   - **Live tab (go2rtc streams):** Uses **Frigate IP** from Settings, not the Event Buffer base URL. **Camera list:** Fetched once on app load (MainActivity calls `go2RtcStreamsRepository.refresh()`) and when Frigate IP is saved in Settings; Settings and Live tab read from `Go2RtcStreamsRepository.state` (no per-screen fetch). `SettingsPreferences.buildFrigateApiBaseUrl(frigateIp)` returns `http://<frigate_ip>:5000/`; repository uses that to call `getGo2RtcStreams()` (GET api/go2rtc/streams).
    - Daily Review uses the same base URL and API client for `api/daily-review/current` and `api/daily-review/generate`.
    - No API calls from Composables; all from ViewModels.
 

@@ -8,6 +8,7 @@ import android.os.Build
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import com.example.frigateeventviewer.data.push.PushConstants
+import com.example.frigateeventviewer.data.Go2RtcStreamsRepository
 import com.example.frigateeventviewer.ui.util.StreamingVideoFetcher
 
 /**
@@ -21,6 +22,9 @@ import com.example.frigateeventviewer.ui.util.StreamingVideoFetcher
  * Channel IDs: [PushConstants.CHANNEL_ID_SECURITY_ALERTS], [PushConstants.CHANNEL_ID_BADGE].
  */
 class FrigateEventViewerApplication : Application(), ImageLoaderFactory {
+
+    /** Shared cache of go2rtc stream names; fetch on app load and when Frigate IP changes in Settings. Lazy so context is ready. */
+    val go2RtcStreamsRepository by lazy { Go2RtcStreamsRepository(this) }
 
     override fun onCreate() {
         super.onCreate()

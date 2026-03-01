@@ -899,7 +899,17 @@ Full media URLs are built on the client as `{baseUrl}{path}` (see §2.4); the ap
 
 ---
 
-**App usage:** The Android app uses **§7.1** (GET `/api/events/unread_count`) to drive the app icon badge on resume, and **§8** (Snooze: GET/POST/DELETE `/api/snooze`) for the Snooze screen (per-camera snooze with duration presets and Notification/AI toggles).
+## 10. Frigate / go2rtc API (Live tab)
+
+The Live tab populates its "Select Camera" dropdown from the **Frigate** go2rtc API. This uses a separate base URL built from the **Frigate IP address** setting (not the Event Buffer base URL).
+
+- **Frigate IP setting:** The app has a Settings field **"Frigate IP address"** (hostname or IP, no scheme or port). The Frigate API base URL is built as **HTTP** with this IP and port 5000: e.g. `http://<frigate_ip>:5000/`. Use `SettingsPreferences.buildFrigateApiBaseUrl(frigateIp)`.
+- **Endpoint:** `GET /api/go2rtc/streams` (path relative to that base URL).
+- **Response (200):** A JSON object whose **top-level keys** are the stream names (e.g. `front_door`, `back_yard`). The app uses only the keys; values are not required for the dropdown. If the server uses `/go2rtc/streams` instead of `/api/go2rtc/streams`, adjust the path in `FrigateApiService`.
+
+---
+
+**App usage:** The Android app uses **§7.1** (GET `/api/events/unread_count`) to drive the app icon badge on resume, and **§8** (Snooze: GET/POST/DELETE `/api/snooze`) for the Snooze screen (per-camera snooze with duration presets and Notification/AI toggles). The **Live** tab uses **§10** (GET `/api/go2rtc/streams` via Frigate base URL from Frigate IP setting) to populate the camera dropdown; the selected stream name is kept for future web player use. **Settings** also calls GET `/api/go2rtc/streams` to show a "Default camera" dropdown; the chosen value is stored and used to preselect the Live tab camera when available.
 
 ---
 

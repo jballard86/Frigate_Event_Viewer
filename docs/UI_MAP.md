@@ -12,7 +12,7 @@ Whenever a new screen or navigation route is added to the app, the AI agent **MU
 
 ## Design System & UI Guidelines
 
-Apply these rules across all screens to keep the app visually consistent.
+Apply these rules across all screens to keep the app visually consistent. **All new screens and UI (e.g. Live tab, new settings fields) must follow this Design System** — container margins, typography, shapes, spacing.
 
 - **Screen headers:** The main tab screens (Live, Dashboard, Events, Daily Review) use a large top-app-bar style title at the top of their main content: `MaterialTheme.typography.headlineLarge`, with **16.dp** horizontal and top padding and **8.dp** bottom spacing before the body content. Main screen headers include a **settings navigation icon on the right** that navigates to the settings route; when on the **Dashboard** tab, a **Snooze** icon (NotificationsOff) is also shown and navigates to the snooze route. Back from Settings or Snooze returns to the main tabs.
 - **Nested screens (Settings, Event detail):** Use a **TopAppBar** with title and **navigationIcon** = `IconButton` + `Icons.AutoMirrored.Filled.ArrowBack` for consistent back styling. These screens also use **full-width swipe-back** via **SwipeBackBox** (see `ui/util/SwipeBack.kt`): a rightward swipe from anywhere on the screen triggers back (same feel as swiping between tabs). Vertical scroll is preserved: the gesture is only consumed when horizontal movement exceeds the threshold and dominates vertical movement.
@@ -86,22 +86,26 @@ flowchart TD
 ### SettingsScreen
 
 - **Route:** `"settings"`
-- **Purpose:** First-run / onboarding; also reachable from main tabs via the header settings icon. User enters the Frigate Event Buffer server base URL, can test connection (GET `/status`), and saves. After save (when coming from first-run), app navigates to dashboard and removes settings from back stack. When opened from main tabs, a TopAppBar with back icon is shown and back (or full-width swipe) returns to main tabs. Includes a **Landscape tab bar icon transparency** slider (0–100%) for the "Show tab bar" icon opacity in landscape; default 50%; may be hardcoded after testing.
+- **Purpose:** First-run / onboarding; also reachable from main tabs via the header settings icon. User enters the Frigate Event Buffer server base URL and the **Frigate IP address** (hostname or IP for the Live tab go2rtc API; no scheme or port). **Default camera (Live tab):** Dropdown populated from the same go2rtc stream list (GET /api/go2rtc/streams); user can select a default camera or "None"; saved on Save. User can test connection (GET `/status`), and saves. After save (when coming from first-run), app navigates to dashboard and removes settings from back stack. When opened from main tabs, a TopAppBar with back icon is shown and back (or full-width swipe) returns to main tabs. Includes a **Landscape tab bar icon transparency** slider (0–100%) for the "Show tab bar" icon opacity in landscape; default 50%; may be hardcoded after testing.
 - **ViewModel:** `SettingsViewModel` (factory: `SettingsViewModelFactory`).
 - **States:**
   - `urlInput: StateFlow<String>` — current text in the URL field.
+  - `frigateIpInput: StateFlow<String>` — current text in the Frigate IP address field.
   - `connectionTestState: StateFlow<ConnectionTestState>` — `Idle` | `Loading` | `Success` | `Error(message)`.
+  - `defaultCameraListState: StateFlow<Go2RtcStreamsState>` — from **Go2RtcStreamsRepository.state** (Loading | Success(streamNames) | Unavailable).
+  - `defaultCameraSelection: StateFlow<String?>` — selected default camera (stream name), or null for "None".
   - `landscapeTabIconAlpha: StateFlow<Float>` — opacity for the landscape "Show tab bar" icon (0f..1f).
-- **Data source:** `FrigateApiService.getStatus()` for "Test connection". DataStore for `saveBaseUrl` / `getBaseUrlOnce` and `landscapeTabIconAlpha` / `saveLandscapeTabIconAlpha`.
+- **Data source:** `FrigateApiService.getStatus()` for "Test connection". Default camera list from **Go2RtcStreamsRepository.state** (fetched on app load and when Frigate IP saved; no fetch when opening Settings). DataStore for `saveBaseUrl` / `getBaseUrlOnce`, `saveFrigateIp` / `getFrigateIpOnce`, `saveDefaultLiveCamera` / `getDefaultLiveCameraOnce`, and `landscapeTabIconAlpha` / `saveLandscapeTabIconAlpha`. **Save:** On Save, base URL, Frigate IP, and default Live camera are persisted; then `go2RtcStreamsRepository.refresh()` so the list reflects the new IP.
 
 ---
 
 ### LiveScreen
 
 - **Route:** Hosted as page 0 inside `"main_tabs"` (MainTabsScreen pager)
-- **Purpose:** Placeholder for future live camera view. Under the main header: left-aligned label "Select Camera" and a dropdown prefilled with Camera 1 through Camera 5. Body shows centered "Coming soon" text. Styling matches other main tab screens: 16.dp horizontal padding, 8.dp top spacing below header; dropdown uses 12.dp rounded shape (RoundedCornerShape).
-- **ViewModel:** None; dropdown selection and expanded state held in composable state.
-- **Data source:** None (placeholder camera list is hardcoded).
+- **Purpose:** Live camera selection placeholder for future web player. Under the main header: left-aligned label "Select Camera" and a dropdown populated from the Frigate go2rtc API. Body shows "Coming soon" when streams load successfully, or error message + Retry when the API fails. Styling matches other main tab screens: 16.dp horizontal padding, 8.dp top spacing below header; dropdown uses 12.dp rounded shape (RoundedCornerShape). All new UI on this screen follows the Design System (container margins, typography, shapes, spacing).
+- **ViewModel:** `LiveViewModel` (factory: `LiveViewModelFactory(application)`).
+- **States:** `LiveState` — `Loading` | `Success(streamNames: List<String>)` | `Error(message)`. Also `selectedStreamName: StateFlow<String?>` (selected key from streams; used for future web player).
+- **Data source:** Camera list from **Go2RtcStreamsRepository.state** (fetched on app load and when Frigate IP saved in Settings; Live tab does not fetch). Initial selection: if Settings default camera (getDefaultLiveCameraOnce) is in the list, use it; else first stream when non-empty. Retry calls `repository.refresh()`.
 
 ---
 

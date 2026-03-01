@@ -24,6 +24,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.frigateeventviewer.data.api.ApiClient
+import com.example.frigateeventviewer.data.Go2RtcStreamsRepository
 import com.example.frigateeventviewer.data.preferences.SettingsPreferences
 import com.example.frigateeventviewer.data.push.FcmTokenManager
 import com.example.frigateeventviewer.data.push.FrigateFirebaseMessagingService
@@ -106,6 +107,9 @@ class MainActivity : ComponentActivity() {
                 // Wait one frame so NavHost is composed before any navigate().
                 LaunchedEffect(Unit) {
                     delay(50)
+                    (context.applicationContext as? FrigateEventViewerApplication)?.go2RtcStreamsRepository?.let { repo ->
+                        withContext(Dispatchers.IO) { repo.refresh() }
+                    }
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         requestNotificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
                     }

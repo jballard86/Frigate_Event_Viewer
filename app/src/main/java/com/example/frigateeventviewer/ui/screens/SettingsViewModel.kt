@@ -5,7 +5,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.frigateeventviewer.FrigateEventViewerApplication
 import com.example.frigateeventviewer.data.api.ApiClient
+import com.example.frigateeventviewer.data.Go2RtcStreamsState
+import com.example.frigateeventviewer.data.Go2RtcStreamsRepository
 import com.example.frigateeventviewer.data.preferences.SettingsPreferences
 import com.example.frigateeventviewer.data.push.FcmTokenManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +36,7 @@ sealed class ConnectionTestState {
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
     private val preferences = SettingsPreferences(application)
+    private val go2RtcRepository = (application as? FrigateEventViewerApplication)?.go2RtcStreamsRepository
 
     /** Current saved base URL from DataStore, or null. */
     val savedBaseUrl: StateFlow<String?> = preferences.baseUrl
@@ -46,6 +50,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _urlInput = MutableStateFlow("")
     val urlInput: StateFlow<String> = _urlInput.asStateFlow()
 
+    /** User's current input in the Frigate IP field (for two-way binding). */
+    private val _frigateIpInput = MutableStateFlow("")
+    val frigateIpInput: StateFlow<String> = _frigateIpInput.asStateFlow()
+
     /** Result of the last connection test. */
     private val _connectionTestState = MutableStateFlow<ConnectionTestState>(ConnectionTestState.Idle)
     val connectionTestState: StateFlow<ConnectionTestState> = _connectionTestState.asStateFlow()
@@ -58,28 +66,49 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             initialValue = 0.5f
         )
 
+    /** State of the default camera dropdown (shared go2rtc cache). Fetched on app load and when Frigate IP is saved. */
+    val defaultCameraListState: StateFlow<Go2RtcStreamsState> =
+        go2RtcRepository?.state ?: MutableStateFlow(Go2RtcStreamsState.Unavailable(message = null)).asStateFlow()
+
+    /** Currently selected default camera (stream name), or null for "None". */
+    private val _defaultCameraSelection = MutableStateFlow<String?>(null)
+    val defaultCameraSelection: StateFlow<String?> = _defaultCameraSelection.asStateFlow()
+
     init {
         viewModelScope.launch {
             _urlInput.value = preferences.getBaseUrlOnce()?.trimEnd('/') ?: ""
+            _frigateIpInput.value = preferences.getFrigateIpOnce() ?: ""
+            _defaultCameraSelection.value = preferences.getDefaultLiveCameraOnce()
         }
+    }
+
+    fun setDefaultCameraSelection(streamName: String?) {
+        _defaultCameraSelection.value = streamName
     }
 
     fun updateUrlInput(value: String) {
         _urlInput.value = value
     }
 
+    fun updateFrigateIpInput(value: String) {
+        _frigateIpInput.value = value
+    }
+
     /**
-     * Saves the current URL input to DataStore after normalizing.
-     * @return true if saved successfully, false if invalid
+     * Saves the current URL input and Frigate IP to DataStore after normalizing URL.
+     * @return true if URL saved successfully, false if invalid (Frigate IP is always saved)
      */
     fun saveBaseUrl(onSaved: () -> Unit = {}) {
         viewModelScope.launch {
+            preferences.saveFrigateIp(_frigateIpInput.value)
+            preferences.saveDefaultLiveCamera(_defaultCameraSelection.value)
             val normalized = preferences.saveBaseUrl(_urlInput.value)
             if (normalized != null) {
                 _urlInput.update { normalized.trimEnd('/') }
                 FcmTokenManager(getApplication()).registerIfPossible()
                 onSaved()
             }
+            go2RtcRepository?.refresh()
         }
     }
 
