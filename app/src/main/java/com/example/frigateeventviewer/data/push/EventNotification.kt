@@ -4,11 +4,12 @@ import java.util.UUID
 
 /**
  * Phase of a consolidated event as sent in FCM data payload.
- * Drives notification behavior: NEW (motion), SNAPSHOT_READY (crop), CLIP_READY (play), DISCARDED (cancel).
+ * Drives notification behavior: NEW (motion), SNAPSHOT_READY (crop), FINALIZED (final AI text), CLIP_READY (play), DISCARDED (cancel).
  */
 enum class NotificationPhase {
     NEW,
     SNAPSHOT_READY,
+    FINALIZED,
     CLIP_READY,
     DISCARDED,
     UNKNOWN
@@ -98,6 +99,7 @@ data class EventNotification(
         private fun parsePhase(value: String?): NotificationPhase = when (value?.uppercase()) {
             "NEW" -> NotificationPhase.NEW
             "SNAPSHOT_READY" -> NotificationPhase.SNAPSHOT_READY
+            "FINALIZED" -> NotificationPhase.FINALIZED
             "CLIP_READY" -> NotificationPhase.CLIP_READY
             "DISCARDED" -> NotificationPhase.DISCARDED
             else -> NotificationPhase.UNKNOWN

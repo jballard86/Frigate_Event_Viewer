@@ -210,10 +210,11 @@ class FrigateFirebaseMessagingService : FirebaseMessagingService() {
             when (parsed.phase) {
                 NotificationPhase.NEW -> handleNew(applicationContext, baseUrl, nid, parsed, notificationManager)
                 NotificationPhase.SNAPSHOT_READY -> handleSnapshotReady(applicationContext, baseUrl, nid, parsed, notificationManager)
+                NotificationPhase.FINALIZED -> handleFinalized(applicationContext, nid, parsed, notificationManager)
                 NotificationPhase.CLIP_READY -> handleClipReady(applicationContext, baseUrl, nid, parsed, notificationManager)
                 NotificationPhase.DISCARDED -> { /* already cancelled above */ }
                 NotificationPhase.UNKNOWN -> {
-                    Log.w(TAG, "FCM phase UNKNOWN for ce_id=${parsed.ce_id}; ensure server sends phase: NEW|SNAPSHOT_READY|CLIP_READY|DISCARDED (data keys are case-sensitive in FCM)")
+                    Log.w(TAG, "FCM phase UNKNOWN for ce_id=${parsed.ce_id}; ensure server sends phase: NEW|SNAPSHOT_READY|FINALIZED|CLIP_READY|DISCARDED (data keys are case-sensitive in FCM)")
                 }
             }
         }
@@ -336,8 +337,8 @@ class FrigateFirebaseMessagingService : FirebaseMessagingService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val title = eventNotification.camera?.let { "Snapshot: $it" } ?: "Snapshot ready"
-        val bodyText = "Cropped snapshot available"
+        val title = eventNotification.title?.takeIf { it.isNotBlank() } ?: "Snapshot ready"
+        val bodyText = eventNotification.description?.takeIf { it.isNotBlank() } ?: "Cropped snapshot available"
         val builder = NotificationCompat.Builder(context, PushConstants.CHANNEL_ID_SECURITY_ALERTS)
         if (scaledBitmap != null) builder.setLargeIcon(scaledBitmap)
         builder
@@ -346,15 +347,69 @@ class FrigateFirebaseMessagingService : FirebaseMessagingService() {
             .setContentText(bodyText)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .setDefaults(0)
         if (scaledBitmap != null) {
-            builder.setStyle(NotificationCompat.BigPictureStyle().bigPicture(scaledBitmap))
+            builder.setStyle(
+                NotificationCompat.BigPictureStyle()
+                    .bigPicture(scaledBitmap)
+                    .setBigContentTitle(title)
+                    .setSummaryText(bodyText)
+            )
         }
 
         notificationManager.notify(notificationId, builder.build())
     }
 
     /**
-     * CLIP_READY phase: AI title/description, "Play" action, teaser as large icon.
+     * FINALIZED phase: silent in-place update with final AI title/description.
+     * Image is taken from [NotificationImageCache] only (no network). No Play/Keep/Mark Reviewed actions.
+     */
+    private fun handleFinalized(
+        context: Context,
+        notificationId: Int,
+        eventNotification: EventNotification,
+        notificationManager: NotificationManager
+    ) {
+        val scaledBitmap = NotificationImageCache.get(eventNotification.ce_id)
+
+        val contentIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_CE_ID, eventNotification.ce_id)
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            notificationId,
+            contentIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val title = eventNotification.title?.takeIf { it.isNotBlank() } ?: "Event updated"
+        val bodyText = eventNotification.description?.takeIf { it.isNotBlank() } ?: "Tap to view"
+        val builder = NotificationCompat.Builder(context, PushConstants.CHANNEL_ID_SECURITY_ALERTS)
+        if (scaledBitmap != null) builder.setLargeIcon(scaledBitmap)
+        builder
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(title)
+            .setContentText(bodyText)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .setDefaults(0)
+        if (scaledBitmap != null) {
+            builder.setStyle(
+                NotificationCompat.BigPictureStyle()
+                    .bigPicture(scaledBitmap)
+                    .setBigContentTitle(title)
+                    .setSummaryText(bodyText)
+            )
+        }
+
+        notificationManager.notify(notificationId, builder.build())
+    }
+
+    /**
+     * CLIP_READY phase: AI title/description, "Play" action, teaser as large icon. AI title/description, "Play" action, teaser as large icon.
      * First tries API snapshot (same source as events tab), then FCM paths.
      */
     private suspend fun handleClipReady(
@@ -453,6 +508,8 @@ class FrigateFirebaseMessagingService : FirebaseMessagingService() {
             .setContentText(bodyText)
             .setContentIntent(contentPendingIntent)
             .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .setDefaults(0)
             .addAction(android.R.drawable.ic_media_play, "Play", playPendingIntent)
             .addAction(android.R.drawable.checkbox_on_background, "Mark Reviewed", markReviewedPendingIntent)
             .addAction(android.R.drawable.ic_menu_save, "Keep", keepPendingIntent)

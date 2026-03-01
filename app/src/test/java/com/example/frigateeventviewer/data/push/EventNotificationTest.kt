@@ -135,6 +135,15 @@ class EventNotificationTest {
     }
 
     @Test
+    fun from_phaseFinalized_parsesEnum() {
+        val data = mapOf("ce_id" to "x", "phase" to "FINALIZED")
+
+        val result = EventNotification.from(data)
+
+        assertEquals(NotificationPhase.FINALIZED, result.phase)
+    }
+
+    @Test
     fun from_phaseDiscarded_parsesEnum() {
         val data = mapOf("ce_id" to "x", "phase" to "DISCARDED")
 

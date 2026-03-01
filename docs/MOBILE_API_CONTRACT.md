@@ -888,16 +888,18 @@ The backend sends **data-only** FCM messages to the registered device. The Andro
 | Key | Type | Description |
 |-----|------|--------------|
 | `ce_id` | string | Consolidated event ID. Used for deterministic notification slotting; if missing, the app generates a fallback ID so the alert is not lost. |
-| `phase` | string | One of: `NEW`, `SNAPSHOT_READY`, `CLIP_READY`, `DISCARDED`. Drives which notification (or cancel) is shown. |
+| `phase` | string | One of: `NEW`, `SNAPSHOT_READY`, `FINALIZED`, `CLIP_READY`, `DISCARDED`. Drives which notification (or cancel) is shown. |
 | `clear_notification` | string | `"true"` or `"false"`. If true (or phase is `DISCARDED`), the app cancels the notification for this `ce_id`. |
 | `threat_level` | string | Integer as string: `"0"`, `"1"`, `"2"` (0=normal, 1=suspicious, 2=critical). |
 | `camera` | string | Camera name (e.g. for subtitle or "Snapshot: camera"). |
 | `live_frame_proxy` | string | Path for live frame (e.g. `/api/cameras/{camera}/latest.jpg`). Used in phase `NEW`. |
 | `hosted_snapshot` | string | Path to cropped snapshot (e.g. `/files/events/ce_id/camera/snapshot.jpg`). Used in `SNAPSHOT_READY`. |
 | `notification_gif` or `notification.gif` | string | Path to teaser GIF/image. Used in `CLIP_READY`; app uses first frame as large icon. |
-| `title` | string | AI-generated title. Used in `CLIP_READY`. |
-| `description` | string | AI-generated description. Used in `CLIP_READY`. |
+| `title` | string | AI-generated title. Populated and used by the app during **SNAPSHOT_READY**, **FINALIZED**, and **CLIP_READY**. |
+| `description` | string | AI-generated description. Populated and used by the app during **SNAPSHOT_READY**, **FINALIZED**, and **CLIP_READY**. |
 | `hosted_clip` | string | Path to clip for "Play" action. Used in `CLIP_READY`; app passes to MainActivity via intent extra. |
+
+**Title and description:** The backend must populate `title` and `description` for phases **SNAPSHOT_READY**, **FINALIZED**, and **CLIP_READY**. The app uses them for notification content (setContentTitle/setContentText and BigPictureStyle setBigContentTitle/setSummaryText) in all three phases; when missing or blank, the app falls back to fixed strings.
 
 Full media URLs are built on the client as `{baseUrl}{path}` (see §2.4); the app uses `buildMediaUrl(baseUrl, path)` from `ui.util`.
 
