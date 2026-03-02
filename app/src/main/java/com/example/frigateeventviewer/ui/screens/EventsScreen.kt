@@ -13,16 +13,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.filled.Error
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -46,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
@@ -63,6 +61,7 @@ import com.example.frigateeventviewer.ui.util.buildMediaUrl
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -289,18 +288,16 @@ private data class EventCardItem(
     val event_id: String,
     val thumbnailPathCandidates: List<String>,
     val formattedTime: String,
-    val cameraLabel: String,
-    val threat_level: Int,
-    val label: String?
+    val displayTitle: String,
+    val threat_level: Int
 )
 
 private fun eventToCardItem(event: Event): EventCardItem = EventCardItem(
     event_id = event.event_id,
     thumbnailPathCandidates = EventMediaPath.getThumbnailPathCandidates(event),
     formattedTime = formatTimestamp(event.timestamp),
-    cameraLabel = formatCameraName(event.camera),
-    threat_level = event.threat_level,
-    label = event.label
+    displayTitle = event.title?.takeIf { it.isNotBlank() } ?: formatCameraName(event.camera),
+    threat_level = event.threat_level
 )
 
 @Composable
@@ -326,17 +323,18 @@ private fun EventCard(
                 .build()
         }
     }
-    val threatColor = when (item.threat_level) {
-        0 -> MaterialTheme.colorScheme.primary
-        1 -> MaterialTheme.colorScheme.tertiary
-        2 -> MaterialTheme.colorScheme.error
-        else -> MaterialTheme.colorScheme.outline
-    }
-    val threatIcon = when (item.threat_level) {
-        0 -> Icons.Default.CheckCircle
-        1 -> Icons.Default.Warning
-        2 -> Icons.Default.Error
-        else -> Icons.Default.CheckCircle
+    val cardColor = when (item.threat_level) {
+        1 -> lerp(
+            MaterialTheme.colorScheme.surfaceVariant,
+            MaterialTheme.colorScheme.tertiaryContainer,
+            0.25f
+        )
+        2 -> lerp(
+            MaterialTheme.colorScheme.surfaceVariant,
+            MaterialTheme.colorScheme.errorContainer,
+            0.25f
+        )
+        else -> MaterialTheme.colorScheme.surfaceVariant
     }
 
     Card(
@@ -344,7 +342,7 @@ private fun EventCard(
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        colors = CardDefaults.cardColors(containerColor = cardColor)
     ) {
         Row(
             modifier = Modifier
@@ -406,44 +404,27 @@ private fun EventCard(
             }
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = item.cameraLabel,
-                    style = MaterialTheme.typography.titleMedium
+                    text = item.displayTitle,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 2
                 )
                 Text(
                     text = item.formattedTime,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Row(
-                    modifier = Modifier.padding(top = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    item.label?.let { label ->
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.labelMedium
-                        )
-                    }
-                    Icon(
-                        imageVector = threatIcon,
-                        contentDescription = "Threat level ${item.threat_level}",
-                        modifier = Modifier.size(16.dp),
-                        tint = threatColor
-                    )
-                }
             }
         }
     }
 }
 
 /**
- * Formats Unix timestamp string to readable date/time using java.time.
+ * Formats Unix timestamp string to readable date/time using java.time (12-hour format).
  */
 private fun formatTimestamp(timestamp: String): String {
     val seconds = timestamp.toLongOrNull() ?: 0L
     val instant = Instant.ofEpochSecond(seconds)
-    val formatter = DateTimeFormatter.ofPattern("MMM d, yyyy HH:mm")
+    val formatter = DateTimeFormatter.ofPattern("MMM d, yyyy h:mm a", Locale.getDefault())
         .withZone(ZoneId.systemDefault())
     return formatter.format(instant)
 }

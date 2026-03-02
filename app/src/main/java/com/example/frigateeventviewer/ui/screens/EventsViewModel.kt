@@ -160,6 +160,29 @@ class EventsViewModel(
         loadEvents()
     }
 
+    /**
+     * Returns the next unreviewed event after [currentEventId] in the current displayed list order.
+     * Used when the user marks an event as reviewed so the detail screen can show the next one.
+     * Returns null if not in Unreviewed mode, or if [currentEventId] is last or not in the list.
+     */
+    fun getNextUnreviewedEventAfter(currentEventId: String): Event? {
+        if (_filterMode.value != EventsFilterMode.Unreviewed) return null
+        val list = _displayedEvents.value
+        val index = list.indexOfFirst { it.event_id == currentEventId }
+        return if (index < 0) null else list.getOrNull(index + 1)
+    }
+
+    /**
+     * Returns the event at [offset] positions from [currentEventId] in the current displayed list.
+     * Used for swipe-to-cycle on event detail: offset -1 = previous, offset +1 = next.
+     * Works for any filter mode (Unreviewed, Reviewed, Saved). Returns null if not found or out of range.
+     */
+    fun getEventAtOffset(currentEventId: String, offset: Int): Event? {
+        val list = _displayedEvents.value
+        val index = list.indexOfFirst { it.event_id == currentEventId }
+        return if (index < 0) null else list.getOrNull(index + offset)
+    }
+
     private fun loadEvents() {
         viewModelScope.launch {
             loadMutex.withLock {

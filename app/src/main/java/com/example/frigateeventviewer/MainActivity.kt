@@ -38,6 +38,7 @@ import com.example.frigateeventviewer.ui.screens.EventDetailScreen
 import com.example.frigateeventviewer.ui.screens.EventDetailViewModel
 import com.example.frigateeventviewer.ui.screens.EventDetailViewModelFactory
 import com.example.frigateeventviewer.ui.screens.EventsViewModel
+import com.example.frigateeventviewer.ui.screens.EventsFilterMode
 import com.example.frigateeventviewer.ui.screens.EventsViewModelFactory
 import com.example.frigateeventviewer.ui.screens.EventNotFoundScreen
 import com.example.frigateeventviewer.ui.screens.SharedEventViewModel
@@ -217,6 +218,14 @@ class MainActivity : ComponentActivity() {
                         val selectedEvent by sharedEventViewModel.selectedEvent.collectAsState()
                         val eventDetailViewModel: EventDetailViewModel =
                             viewModel(factory = EventDetailViewModelFactory(application))
+                        val filterMode by eventsViewModel.filterMode.collectAsState()
+                        val eventListLabel = remember(filterMode) {
+                            when (filterMode) {
+                                EventsFilterMode.Unreviewed -> "Unreviewed"
+                                EventsFilterMode.Reviewed -> "Reviewed"
+                                EventsFilterMode.Saved -> "Saved"
+                            }
+                        }
 
                         BackHandler {
                             sharedEventViewModel.selectEvent(null)
@@ -224,24 +233,72 @@ class MainActivity : ComponentActivity() {
                         }
                         EventDetailScreen(
                             selectedEvent = selectedEvent,
+                            eventListLabel = eventListLabel,
                             onBack = {
                                 sharedEventViewModel.selectEvent(null)
                                 navController.popBackStack()
                             },
-                            onEventActionCompleted = { markedReviewedEventId: String?, deletedEventId: String? ->
-                                sharedEventViewModel.requestEventsRefresh(
-                                    markedReviewedEventId,
-                                    deletedEventId
-                                )
-                                if (markedReviewedEventId != null || deletedEventId != null) {
+                            onCycleEvent = { direction ->
+                                val currentId = selectedEvent?.event_id ?: return@EventDetailScreen
+                                eventsViewModel.getEventAtOffset(currentId, direction)?.let {
+                                    sharedEventViewModel.selectEvent(it)
+                                }
+                            },
+                            onEventActionCompleted = { markedReviewedEventId: String?, deletedEventId: String?, advanceFromCurrent: Boolean ->
+                                if (markedReviewedEventId != null) {
+                                    val nextEvent = eventsViewModel.getNextUnreviewedEventAfter(markedReviewedEventId)
+                                    sharedEventViewModel.requestEventsRefresh(
+                                        markedReviewedEventId,
+                                        deletedEventId
+                                    )
                                     lifecycleScope.launch {
-                                        markedReviewedEventId?.let { UnreadState.recordMarkedReviewed(it) }
-                                        deletedEventId?.let { UnreadState.recordDeleted(it) }
+                                        UnreadState.recordMarkedReviewed(markedReviewedEventId)
                                         withContext<Unit>(Dispatchers.Main) {
                                             UnreadBadgeHelper.applyBadge(
                                                 applicationContext,
                                                 UnreadState.currentEffectiveUnreadCount()
                                             )
+                                        }
+                                    }
+                                    if (nextEvent != null) {
+                                        sharedEventViewModel.selectEvent(nextEvent)
+                                    } else {
+                                        sharedEventViewModel.selectEvent(null)
+                                        mainTabsViewModel.setSelectedTabIndex(2)
+                                        navController.popBackStack()
+                                    }
+                                } else if (advanceFromCurrent) {
+                                    val currentId = selectedEvent?.event_id
+                                    val nextEvent = currentId?.let { id ->
+                                        eventsViewModel.getEventAtOffset(id, 1)
+                                    }
+                                    sharedEventViewModel.requestEventsRefresh(
+                                        markedReviewedEventId,
+                                        deletedEventId
+                                    )
+                                    eventsViewModel.refresh(force = true)
+                                    if (nextEvent != null) {
+                                        sharedEventViewModel.selectEvent(nextEvent)
+                                    } else {
+                                        sharedEventViewModel.selectEvent(null)
+                                        mainTabsViewModel.setSelectedTabIndex(2)
+                                        navController.popBackStack()
+                                    }
+                                } else {
+                                    sharedEventViewModel.requestEventsRefresh(
+                                        markedReviewedEventId,
+                                        deletedEventId
+                                    )
+                                    eventsViewModel.refresh(force = true)
+                                    if (deletedEventId != null) {
+                                        lifecycleScope.launch {
+                                            UnreadState.recordDeleted(deletedEventId)
+                                            withContext<Unit>(Dispatchers.Main) {
+                                                UnreadBadgeHelper.applyBadge(
+                                                    applicationContext,
+                                                    UnreadState.currentEffectiveUnreadCount()
+                                                )
+                                            }
                                         }
                                     }
                                 }

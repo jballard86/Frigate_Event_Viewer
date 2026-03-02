@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -39,9 +40,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -65,14 +70,18 @@ import coil.request.ImageRequest
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 import android.content.res.Configuration
+import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EventDetailScreen(
     selectedEvent: Event?,
     onBack: () -> Unit,
-    onEventActionCompleted: (markedReviewedEventId: String?, deletedEventId: String?) -> Unit = { _, _ -> },
+    eventListLabel: String? = null,
+    onCycleEvent: ((Int) -> Unit)? = null,
+    onEventActionCompleted: (markedReviewedEventId: String?, deletedEventId: String?, advanceFromCurrent: Boolean) -> Unit = { _, _, _ -> },
     viewModel: EventDetailViewModel = viewModel<EventDetailViewModel>(
         factory = EventDetailViewModelFactory(
             LocalContext.current.applicationContext as android.app.Application
@@ -87,15 +96,15 @@ fun EventDetailScreen(
         when (val opState = operationState) {
             is EventDetailOperationState.Success -> when (opState.action) {
                 EventDetailAction.DELETE -> {
-                    onEventActionCompleted(null, selectedEvent?.event_id)
+                    onEventActionCompleted(null, selectedEvent?.event_id, false)
                     onBack()
                 }
                 EventDetailAction.KEEP -> {
-                    onEventActionCompleted(null, null)
-                    onBack()
+                    onEventActionCompleted(null, null, true)
+                    viewModel.resetOperationState()
                 }
                 EventDetailAction.MARK_VIEWED -> {
-                    onEventActionCompleted(selectedEvent?.event_id, null)
+                    onEventActionCompleted(selectedEvent?.event_id, null, false)
                     snackbarHostState.showSnackbar("Marked as reviewed")
                     viewModel.resetOperationState()
                 }
@@ -108,10 +117,13 @@ fun EventDetailScreen(
         }
     }
 
+    val baseTitle = "Event Detail"
+    val fullTitle = eventListLabel?.let { "$baseTitle - $it" } ?: baseTitle
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Event detail") },
+                title = { Text(fullTitle) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -169,11 +181,84 @@ fun EventDetailScreen(
                     .padding(horizontal = 16.dp)
                     .verticalScroll(rememberScrollState())
             ) {
-                EventVideoSection(
-                    event = event,
-                    baseUrl = baseUrl,
-                    availableHeightDp = availableHeightDp
-                )
+                val cycleThresholdDp = 50.dp
+                val density = LocalDensity.current
+                val cycleThresholdPx = with(density) { cycleThresholdDp.toPx() }
+                val verticalSwipeModifier =
+                    if (selectedEvent != null && onCycleEvent != null) {
+                        Modifier.pointerInput(selectedEvent.event_id, cycleThresholdPx) {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val down = awaitFirstDown(
+                                        requireUnconsumed = false,
+                                        pass = PointerEventPass.Main
+                                    )
+                                    val pointerId = down.id
+                                    var totalDragX = 0f
+                                    var totalDragY = 0f
+                                    var triggered = false
+
+                                    while (true) {
+                                        val event = awaitPointerEvent(PointerEventPass.Main)
+                                        val change = event.changes.firstOrNull { it.id == pointerId }
+                                            ?: continue
+
+                                        if (!change.pressed) {
+                                            if (!change.isConsumed) {
+                                                change.consume()
+                                            }
+                                            break
+                                        }
+
+                                        if (triggered) {
+                                            if (!change.isConsumed) {
+                                                change.consume()
+                                            }
+                                            continue
+                                        }
+
+                                        if (!change.isConsumed) {
+                                            val deltaX =
+                                                change.position.x - change.previousPosition.x
+                                            val deltaY =
+                                                change.position.y - change.previousPosition.y
+                                            totalDragX += deltaX
+                                            totalDragY += deltaY
+                                            change.consume()
+
+                                            if (totalDragY < -cycleThresholdPx &&
+                                                abs(totalDragY) > abs(totalDragX)
+                                            ) {
+                                                triggered = true
+                                                onCycleEvent(1)
+                                            } else if (totalDragY > cycleThresholdPx &&
+                                                abs(totalDragY) > abs(totalDragX)
+                                            ) {
+                                                triggered = true
+                                                onCycleEvent(-1)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        Modifier
+                    }
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    EventVideoSection(
+                        event = event,
+                        baseUrl = baseUrl,
+                        availableHeightDp = availableHeightDp
+                    )
+                    // Overlay on top so pointerInput receives touches (video AndroidView would consume them otherwise).
+                    val overlaySizeModifier = if (availableHeightDp != null) {
+                        Modifier.fillMaxWidth().height(availableHeightDp)
+                    } else {
+                        Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                    }
+                    Box(modifier = overlaySizeModifier.then(verticalSwipeModifier))
+                }
                 EventActionsSection(
                     eventPath = eventPath,
                     saved = event.saved == true,
@@ -401,6 +486,13 @@ private fun EventMetadataSection(event: Event) {
                 style = MaterialTheme.typography.titleMedium
             )
         }
+        event.description?.takeIf { it.isNotBlank() }?.let { description ->
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         event.scene?.let { scene ->
             Text(
                 text = scene,
@@ -426,7 +518,7 @@ private fun EventMetadataSection(event: Event) {
 private fun formatTimestamp(timestamp: String): String {
     val seconds = timestamp.toLongOrNull() ?: 0L
     val instant = Instant.ofEpochSecond(seconds)
-    val formatter = DateTimeFormatter.ofPattern("MMM d, yyyy HH:mm")
+    val formatter = DateTimeFormatter.ofPattern("MMM d, yyyy h:mm a", Locale.getDefault())
         .withZone(ZoneId.systemDefault())
     return formatter.format(instant)
 }
