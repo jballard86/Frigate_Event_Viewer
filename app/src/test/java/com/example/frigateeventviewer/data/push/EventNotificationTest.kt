@@ -43,6 +43,7 @@ class EventNotificationTest {
         assertEquals("/files/events/ce_123/clip.mp4", result.hosted_clip)
         assertEquals(null, result.cropped_image_url)
         assertEquals(null, result.image_url)
+        assertEquals(null, result.b64_thumb)
     }
 
     @Test
@@ -69,6 +70,37 @@ class EventNotificationTest {
         val result = EventNotification.from(data)
 
         assertEquals("/files/events/1772252671_bf1c91a6/front_door/snapshot_cropped.jpg", result.cropped_image_url)
+    }
+
+    @Test
+    fun from_b64Thumb_parsesWhenPresent() {
+        val data = mapOf(
+            "ce_id" to "x",
+            "phase" to "NEW",
+            "b64_thumb" to "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmiQQAAAABJRU5ErkJggg=="
+        )
+
+        val result = EventNotification.from(data)
+
+        assertEquals("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmiQQAAAABJRU5ErkJggg==", result.b64_thumb)
+    }
+
+    @Test
+    fun from_b64ThumbMissing_isNull() {
+        val data = mapOf("ce_id" to "x", "phase" to "NEW")
+
+        val result = EventNotification.from(data)
+
+        assertEquals(null, result.b64_thumb)
+    }
+
+    @Test
+    fun from_b64ThumbBlank_isNull() {
+        val data = mapOf("ce_id" to "x", "phase" to "NEW", "b64_thumb" to "   ")
+
+        val result = EventNotification.from(data)
+
+        assertEquals(null, result.b64_thumb)
     }
 
     @Test

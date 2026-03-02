@@ -58,14 +58,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _connectionTestState = MutableStateFlow<ConnectionTestState>(ConnectionTestState.Idle)
     val connectionTestState: StateFlow<ConnectionTestState> = _connectionTestState.asStateFlow()
 
-    /** Landscape tab bar icon alpha (0f..1f). Default 0.5f. */
-    val landscapeTabIconAlpha: StateFlow<Float> = preferences.landscapeTabIconAlpha
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = 0.5f
-        )
-
     /** State of the default camera dropdown (shared go2rtc cache). Fetched on app load and when Frigate IP is saved. */
     val defaultCameraListState: StateFlow<Go2RtcStreamsState> =
         go2RtcRepository?.state ?: MutableStateFlow(Go2RtcStreamsState.Unavailable(message = null)).asStateFlow()
@@ -144,15 +136,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun clearConnectionTestState() {
         _connectionTestState.value = ConnectionTestState.Idle
-    }
-
-    /**
-     * Saves the landscape tab bar icon alpha (0f..1f). Used for the "show tab bar" icon in landscape.
-     */
-    fun setLandscapeTabIconAlpha(value: Float) {
-        viewModelScope.launch {
-            preferences.saveLandscapeTabIconAlpha(value)
-        }
     }
 }
 

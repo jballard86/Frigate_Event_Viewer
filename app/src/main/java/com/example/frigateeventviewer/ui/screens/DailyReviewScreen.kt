@@ -1,16 +1,24 @@
 package com.example.frigateeventviewer.ui.screens
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -24,9 +32,15 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -35,6 +49,9 @@ import androidx.compose.ui.text.TextStyle
 import com.mikepenz.markdown.compose.LocalMarkdownTypography
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.model.MarkdownTypography
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,33 +76,52 @@ fun DailyReviewScreen(
         onRefresh = { viewModel.refresh(force = true) },
         modifier = Modifier.fillMaxSize()
     ) {
-        Scaffold(
-            modifier = Modifier.fillMaxSize(),
-            floatingActionButton = {
-                ExtendedFloatingActionButton(
-                    onClick = { viewModel.generateNewReview() },
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    icon = {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = null
-                        )
-                    },
-                    text = {
-                        Text(
-                            text = "Generate New Report",
-                            maxLines = 1
-                        )
-                    }
-                )
+        val scrollState = rememberScrollState()
+        var longPressActive by remember { mutableStateOf(false) }
+        val isAtTop = remember(state, scrollState.value, scrollState.maxValue) {
+            when (state) {
+                is DailyReviewState.Success -> {
+                    val buffer = (scrollState.maxValue * 0.03f).toInt().coerceAtLeast(0)
+                    scrollState.value <= buffer
+                }
+                else -> true
             }
-        ) { innerPadding ->
+        }
+        val showButton = isAtTop && !longPressActive
+        val coroutineScope = rememberCoroutineScope()
+
+        Box(modifier = Modifier.fillMaxSize()) {
+            Scaffold(
+                modifier = Modifier.fillMaxSize()
+            ) { innerPadding ->
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(innerPadding)
                         .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 16.dp)
+                        .pointerInput(Unit, coroutineScope) {
+                            awaitPointerEventScope {
+                                var pressJob: Job? = null
+                                while (true) {
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    when (event.type) {
+                                        PointerEventType.Press -> {
+                                            pressJob?.cancel()
+                                            pressJob = coroutineScope.launch {
+                                                delay(500)
+                                                longPressActive = true
+                                            }
+                                        }
+                                        PointerEventType.Release -> {
+                                            pressJob?.cancel()
+                                            pressJob = null
+                                            longPressActive = false
+                                        }
+                                        else -> {}
+                                    }
+                                }
+                            }
+                        }
                 ) {
                     when (val s = state) {
                         is DailyReviewState.Idle,
@@ -98,6 +134,7 @@ fun DailyReviewScreen(
                             Spacer(modifier = Modifier.height(8.dp))
                             DailyReviewContent(
                                 markdownText = s.markdownText,
+                                scrollState = scrollState,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -111,6 +148,53 @@ fun DailyReviewScreen(
                     }
                 }
             }
+            DailyReviewGenerateButton(
+                visible = showButton,
+                onClick = { viewModel.generateNewReview() },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 0.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun DailyReviewGenerateButton(
+    visible: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(),
+        exit = fadeOut(),
+        modifier = modifier
+    ) {
+        Button(
+            onClick = onClick,
+            modifier = Modifier.height(40.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Text(
+                    text = "Generate New Report",
+                    maxLines = 1
+                )
+            }
+        }
     }
 }
 
@@ -135,9 +219,9 @@ private fun DailyReviewLoading(modifier: Modifier = Modifier) {
 @Composable
 private fun DailyReviewContent(
     markdownText: String,
+    scrollState: ScrollState,
     modifier: Modifier = Modifier
 ) {
-    val scrollState = rememberScrollState()
     val h1Style = MaterialTheme.typography.titleLarge
     val h2Style = MaterialTheme.typography.titleMedium
     val h3Style = MaterialTheme.typography.titleSmall

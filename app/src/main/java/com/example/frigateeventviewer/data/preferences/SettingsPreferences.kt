@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -15,7 +14,7 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 
 /**
  * DataStore-backed preferences for app settings (e.g. server Base URL, Frigate IP).
- * Exposes flows and suspend functions to read/save base URL, Frigate IP, default Live camera, and landscape tab icon alpha.
+ * Exposes flows and suspend functions to read/save base URL, Frigate IP, and default Live camera.
  */
 class SettingsPreferences(private val context: Context) {
 
@@ -80,23 +79,6 @@ class SettingsPreferences(private val context: Context) {
         dataStore.data.map { prefs -> prefs[FRIGATE_IP_KEY]?.takeIf { it.isNotBlank() } }.first()
 
     /**
-     * Flow of the landscape tab bar icon alpha (0f..1f). Default 0.5f when unset.
-     * Used for the "show tab bar" icon opacity in landscape.
-     */
-    val landscapeTabIconAlpha: Flow<Float> = dataStore.data.map { prefs ->
-        prefs[LANDSCAPE_TAB_ICON_ALPHA_KEY] ?: DEFAULT_LANDSCAPE_TAB_ICON_ALPHA
-    }
-
-    /**
-     * Saves the landscape tab bar icon alpha. Value should be in 0f..1f.
-     */
-    suspend fun saveLandscapeTabIconAlpha(value: Float) {
-        dataStore.edit { prefs ->
-            prefs[LANDSCAPE_TAB_ICON_ALPHA_KEY] = value.coerceIn(0f, 1f)
-        }
-    }
-
-    /**
      * Flow of the default Live tab camera (go2rtc stream name), or null if not set.
      */
     val defaultLiveCamera: Flow<String?> = dataStore.data.map { prefs ->
@@ -124,8 +106,6 @@ class SettingsPreferences(private val context: Context) {
         private val BASE_URL_KEY = stringPreferencesKey("server_base_url")
         private val FRIGATE_IP_KEY = stringPreferencesKey("frigate_ip")
         private val DEFAULT_LIVE_CAMERA_KEY = stringPreferencesKey("default_live_camera")
-        private val LANDSCAPE_TAB_ICON_ALPHA_KEY = floatPreferencesKey("landscape_tab_icon_alpha")
-        private const val DEFAULT_LANDSCAPE_TAB_ICON_ALPHA = 0.5f
 
         /**
          * Builds the Frigate API base URL from the stored Frigate IP.

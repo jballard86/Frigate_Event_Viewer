@@ -183,12 +183,6 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     composable("main_tabs") {
-                        val settingsPrefs = remember(application) {
-                            SettingsPreferences(application)
-                        }
-                        val landscapeTabIconAlpha by settingsPrefs.landscapeTabIconAlpha.collectAsState(
-                            initial = 0.5f
-                        )
                         val dailyReviewViewModel: DailyReviewViewModel =
                             viewModel(factory = DailyReviewViewModelFactory(application))
                         MainTabsScreen(
@@ -198,7 +192,7 @@ class MainActivity : ComponentActivity() {
                             dailyReviewViewModel = dailyReviewViewModel,
                             eventsViewModel = eventsViewModel,
                             liveViewModel = liveViewModel,
-                            landscapeTabIconAlphaProvider = { landscapeTabIconAlpha }
+                            landscapeTabIconAlphaProvider = { 0.5f }
                         )
                     }
                     composable(

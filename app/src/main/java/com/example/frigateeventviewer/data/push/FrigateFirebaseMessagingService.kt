@@ -5,6 +5,8 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Base64
 import android.util.Log
 import android.graphics.drawable.BitmapDrawable
 import androidx.core.app.NotificationCompat
@@ -182,9 +184,20 @@ class FrigateFirebaseMessagingService : FirebaseMessagingService() {
         var scaledBitmap = NotificationImageCache.get(eventNotification.ce_id)
         if (scaledBitmap == null) {
             var bitmap: android.graphics.Bitmap? = null
-            val imageUrl = eventNotification.image_url
-            if (!imageUrl.isNullOrBlank() && (imageUrl.startsWith("http://") || imageUrl.startsWith("https://"))) {
-                bitmap = loadNotificationBitmapFromUrl(context, imageUrl)
+            val b64Thumb = eventNotification.b64_thumb
+            if (!b64Thumb.isNullOrBlank()) {
+                try {
+                    val bytes = Base64.decode(b64Thumb, Base64.DEFAULT)
+                    bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                } catch (_: Exception) {
+                    Log.w(TAG, "Failed to decode b64_thumb")
+                }
+            }
+            if (bitmap == null) {
+                val imageUrl = eventNotification.image_url
+                if (!imageUrl.isNullOrBlank() && (imageUrl.startsWith("http://") || imageUrl.startsWith("https://"))) {
+                    bitmap = loadNotificationBitmapFromUrl(context, imageUrl)
+                }
             }
             if (bitmap == null) {
                 bitmap = loadNotificationBitmap(

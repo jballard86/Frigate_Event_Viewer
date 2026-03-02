@@ -36,6 +36,8 @@ data class EventNotification(
     val cropped_image_url: String?,
     /** Full URL to the notification image (e.g. Firebase Storage or other public URL). When set, app loads from this first with no delay; avoids VPN/private-network issues on cellular. */
     val image_url: String?,
+    /** Base64-encoded micro-thumbnail for Phase 1 (NEW); when present the app decodes it for instant large icon without network. */
+    val b64_thumb: String?,
     val title: String?,
     val description: String?,
     val hosted_clip: String?
@@ -52,6 +54,7 @@ data class EventNotification(
         private const val KEY_NOTIFICATION_GIF_ALT = "notification.gif"
         private const val KEY_CROPPED_IMAGE_URL = "cropped_image_url"
         private const val KEY_IMAGE_URL = "image_url"
+        private const val KEY_B64_THUMB = "b64_thumb"
         private const val KEY_TITLE = "title"
         private const val KEY_DESCRIPTION = "description"
         private const val KEY_HOSTED_CLIP = "hosted_clip"
@@ -75,6 +78,7 @@ data class EventNotification(
                 ?: data[KEY_NOTIFICATION_GIF_ALT].takeIf { !it.isNullOrBlank() }
             val croppedImageUrl = data[KEY_CROPPED_IMAGE_URL].takeIf { !it.isNullOrBlank() }
             val imageUrl = data[KEY_IMAGE_URL].takeIf { !it.isNullOrBlank() }
+            val b64Thumb = data[KEY_B64_THUMB].takeIf { !it.isNullOrBlank() }
             val title = data[KEY_TITLE].takeIf { !it.isNullOrBlank() }
             val description = data[KEY_DESCRIPTION].takeIf { !it.isNullOrBlank() }
             val hostedClip = data[KEY_HOSTED_CLIP].takeIf { !it.isNullOrBlank() }
@@ -90,6 +94,7 @@ data class EventNotification(
                 notification_gif = notificationGif,
                 cropped_image_url = croppedImageUrl,
                 image_url = imageUrl,
+                b64_thumb = b64Thumb,
                 title = title,
                 description = description,
                 hosted_clip = hostedClip
