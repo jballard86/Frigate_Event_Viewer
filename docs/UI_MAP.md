@@ -51,53 +51,116 @@ When adding a **new** screen that needs rotation-resistant state, follow this pa
 
 ## 1. Navigation flowchart
 
+### 1.1 Master navigation overview
+
 ```mermaid
-flowchart TD
+graph TD
     appLaunch["App launch"]
-    navHost["NavHost startDestination=main_tabs"]
-    settingsScreen["SettingsScreen"]
-    mainTabs["MainTabsScreen (pager)"]
+    deepLink["Deep link<br/>buffer://event_detail/id"]
+    notificationTap["Notification tap<br/>EXTRA_CE_ID"]
+
+    navHost["NavHost<br/>startDestination: main_tabs"]
+    mainTabs["MainTabsScreen<br/>Pager: Live / Dashboard / Events / Daily Review"]
+
+    settings["SettingsScreen"]
+    snooze["SnoozeScreen"]
+    eventDetail["EventDetailScreen"]
+    eventNotFound["EventNotFoundScreen"]
+
     live["LiveScreen"]
     dashboard["DashboardScreen"]
     events["EventsScreen"]
     dailyReview["DailyReviewScreen"]
-    eventDetail["EventDetailScreen"]
-    bottomBar["Bottom bar visible"]
 
     appLaunch --> navHost
     navHost --> mainTabs
-    mainTabs --> bottomBar
-    mainTabs -->|Settings icon| settingsScreen
-    settingsScreen -->|Save or Back| mainTabs
-    bottomBar -->|Live tab or swipe| live
-    bottomBar -->|Dashboard tab or swipe| dashboard
-    bottomBar -->|Events tab or swipe| events
-    bottomBar -->|Daily Review tab or swipe| dailyReview
-    events -->|Tap event| eventDetail
-    eventDetail -->|Back| events
-    deeplink["buffer://event_detail/ce_id"] --> mainTabs
-    deeplink -->|No base URL| settingsScreen
-    deeplink -->|Resolve to event| eventDetail
-    deeplink -->|Not found| eventNotFound["EventNotFoundScreen"]
-    notificationTap["Notification tap (EXTRA_CE_ID)"] --> mainTabs
-    notificationTap -->|Same resolution as deep link| eventDetail
-    notificationTap -->|Not found| eventNotFound
-    eventNotFound -->|Refresh| eventDetail
-    eventNotFound -->|Back| mainTabs
-    dashboard -->|Snooze icon| snooze["SnoozeScreen"]
+
+    mainTabs -->|Settings icon| settings
+    settings -->|Save or back| mainTabs
+
+    mainTabs -->|Live tab| live
+    mainTabs -->|Dashboard tab| dashboard
+    mainTabs -->|Events tab| events
+    mainTabs -->|Daily Review tab| dailyReview
+
+    dashboard -->|Snooze icon| snooze
     snooze -->|Back| mainTabs
+
+    events -->|Tap event card| eventDetail
+    eventDetail -->|Back| events
+
+    deepLink --> navHost
+    notificationTap --> navHost
+
+    navHost -->|Resolve ID to event| eventDetail
+    navHost -->|ID not found| eventNotFound
+    navHost -->|No base URL| settings
+
+    eventNotFound -->|Refresh / Retry| navHost
+    eventNotFound -->|Back to app| mainTabs
+```
+
+### 1.2 Settings flow
+
+```mermaid
+graph TD
+    fromTabs["User opens Settings<br/>from main tabs"]
+    fromDeepLink["App opened from deep link<br/>and base URL missing"]
+
+    settings["SettingsScreen"]
+    save["Save base URL,<br/>Frigate IP,<br/>default Live camera"]
+    refreshGo2Rtc["Go2RtcStreamsRepository.refresh()"]
+    backToDashboard["Navigate to main_tabs<br/>(Dashboard tab)"]
+
+    fromTabs --> settings
+    fromDeepLink --> settings
+
+    settings --> save --> refreshGo2Rtc --> backToDashboard
+    settings -->|"Back (no changes)"| backToDashboard
+```
+
+### 1.3 Events and Event detail flow
+
+```mermaid
+graph TD
+    events["EventsScreen<br/>(list + filter dropdown)"]
+    tapEvent["User taps event card"]
+    detail["EventDetailScreen"]
+
+    markReviewed["Action: Mark Reviewed"]
+    keep["Action: Keep"]
+    delete["Action: Delete"]
+
+    nextUnreviewed["Next unreviewed event<br/>exists?"]
+    nextInList["Next event in current<br/>Events list exists?"]
+
+    backToEvents["Return to Events tab<br/>(selection cleared,<br/>Events tab active)"]
+
+    %% Navigate into detail
+    events --> tapEvent --> detail
+
+    %% Mark Reviewed flow
+    detail --> markReviewed --> nextUnreviewed
+    nextUnreviewed -->|Yes| detail
+    nextUnreviewed -->|No| backToEvents
+
+    %% Keep flow
+    detail --> keep --> nextInList
+    nextInList -->|Yes| detail
+    nextInList -->|No| backToEvents
+
+    %% Delete flow
+    detail --> delete --> backToEvents
+
+    %% Swipe to cycle within detail
+    detail -->|"Swipe up/down on video<br/>(previous / next event)"| detail
 ```
 
 **Flow summary:**
 
-- **App launch:** NavHost starts at route `"main_tabs"`. The app opens directly on MainTabsScreen (default tab: Dashboard). Settings is not shown on launch.
-- **Settings access:** Settings is only entered via the header settings icon on main tabs (or when a deep link is opened and no base URL is configured). First-time users open Settings from that icon to configure the server.
-- **After Save (Settings):** `onNavigateToDashboard` runs → navigate to `"main_tabs"`, pop `"settings"` inclusive, so back stack returns to main tabs whether the user opened Settings from the icon or from a deep link.
-- **Bottom bar + pager:** MainTabsScreen owns a `Scaffold` with a bottom bar and a `HorizontalPager` with four pages: **Live**, Dashboard, Events, and Daily Review. **Default (start) tab is Dashboard** (page index 1) so the app opens on Dashboard; users can tap Live or swipe to reach the Live tab. Tapping a tab or swiping animates the pager to the corresponding page; the selected tab is stored in **MainTabsViewModel** (activity-scoped, `SavedStateHandle`) so it survives rotation.
-- **Orientation:** In landscape the bottom bar is hidden by default. Its visibility is animated (expand/shrink) via `AnimatedVisibility`. A semi-transparent drag handle (circle + chevron, 50% opacity) appears at the bottom-right: when the bar is **closed** it floats in the content area (positioned with offset + zIndex); when the bar is **open** the same-style handle sits inside the bottom bar in a transparent strip above the NavigationBar. Drag up on the floating handle to show the bar; drag down on the in-bar handle to hide it. In portrait the bottom bar is always visible.
-- **Event detail:** From EventsScreen (inside the pager), tapping an event card sets `SharedEventViewModel.selectedEvent` and navigates to `"event_detail"`. EventDetailScreen shows video (or snapshot placeholder when no clip is ready yet), actions (Mark Reviewed, Keep, Delete), and metadata. Back (toolbar or system) clears selection and pops to the previous screen.
-- **Deep link:** The app can be opened via `buffer://event_detail/{ce_id}` or by tapping a push notification (body or "Play" action). In both cases MainActivity resolves a pending ce_id (from URI or intent extra `EXTRA_CE_ID`), fetches events (GET /events?filter=all), finds the event by `event_id` or (camera `"events"` and `subdir`), sets the selected event and navigates to `"event_detail"`. If the event is not found, the app navigates to `event_not_found/{ce_id}` which shows "Event not found" and a **Refresh** button that retries the same resolution.
-- **Snooze:** From the Dashboard tab (page 1), the header shows a Snooze icon that navigates to `"snooze"`. SnoozeScreen lets the user set per-camera snooze with duration presets (30m, 1h, 2h), Notification Snooze and AI Snooze toggles, and a camera list with Snooze/Clear actions. Back returns to main tabs.
+- **Master flow:** The app always enters through the NavHost at `"main_tabs"`, which hosts the pager for the four main tabs (Live, Dashboard, Events, Daily Review). Settings and Snooze are nested screens reached from icons in the main-tabs header; Event detail and Event-not-found are nested screens reached from Events or deep-link resolution.
+- **Settings:** Settings can be opened either from the main-tabs header or as part of the deep-link flow when there is no base URL yet. On Save, base URL, Frigate IP, and default Live camera are persisted and `go2RtcStreamsRepository.refresh()` is called, then navigation returns to `"main_tabs"` (Dashboard tab).
+- **Events and Event detail:** Tapping an event card opens EventDetailScreen. Mark Reviewed advances to the next unreviewed event when one exists, otherwise returns to the Events tab; Keep advances to the next event in the current list when possible, otherwise returns to the Events tab; Delete always returns immediately. Vertical swipe on the video area cycles to previous/next event within the current Events list without leaving the detail screen.
 
 ---
 
