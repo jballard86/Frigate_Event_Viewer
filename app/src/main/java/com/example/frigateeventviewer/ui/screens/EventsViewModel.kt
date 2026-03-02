@@ -30,11 +30,12 @@ import kotlinx.coroutines.withContext
  */
 enum class EventsFilterMode {
     Unreviewed,
-    Reviewed
+    Reviewed,
+    Saved
 }
 
 /**
- * UI state for the events list (GET /events?filter=reviewed|unreviewed).
+ * UI state for the events list (GET /events?filter=reviewed|unreviewed|saved).
  * [Loading] may hold [previous] so the UI can show the list while refreshing.
  */
 sealed class EventsState {
@@ -45,7 +46,7 @@ sealed class EventsState {
 
 /**
  * ViewModel for the Events screen.
- * Loads events by filter mode (reviewed / unreviewed); exposes baseUrl, page title, and toggle button label.
+ * Loads events by filter mode (reviewed / unreviewed / saved); exposes baseUrl, page title, and dropdown selection label.
  * Keeps previous list on screen while refreshing. Subscribes to [SharedEventViewModel.eventsRefreshRequested].
  * Filter mode is stored in [SavedStateHandle] so it survives configuration changes (e.g. rotation).
  */
@@ -79,15 +80,18 @@ class EventsViewModel(
     private val _state = MutableStateFlow<EventsState>(EventsState.Loading(null))
     val state: StateFlow<EventsState> = _state.asStateFlow()
 
-    /** Events to display: for Unreviewed, server list minus [UnreadState] locally marked reviewed; for Reviewed, server list. */
+    /** Events to display: for Unreviewed, server list minus [UnreadState] locally marked reviewed; for Reviewed/Saved, server list. */
     private val _displayedEvents = MutableStateFlow<List<Event>>(emptyList())
     val displayedEvents: StateFlow<List<Event>> = _displayedEvents.asStateFlow()
 
-    /** Label for the toggle button: "View Reviewed Events" or "View Unreviewed Events". */
-    private val _filterToggleButtonLabel = MutableStateFlow(toggleLabelForMode(_filterMode.value))
-    val filterToggleButtonLabel: StateFlow<String> = _filterToggleButtonLabel.asStateFlow()
+    /** Label for the filter dropdown trigger: "Unreviewed", "Reviewed", or "Saved". */
+    private val _dropdownSelectionLabel = MutableStateFlow(dropdownLabelForMode(_filterMode.value))
+    val dropdownSelectionLabel: StateFlow<String> = _dropdownSelectionLabel.asStateFlow()
 
     init {
+        if (savedStateHandle.get<String>(KEY_FILTER_MODE) == null) {
+            savedStateHandle[KEY_FILTER_MODE] = _filterMode.value.name
+        }
         loadEvents()
         viewModelScope.launch {
             UnreadState.locallyMarkedReviewedEventIds.collect {
@@ -128,23 +132,21 @@ class EventsViewModel(
         val events = response?.events ?: emptyList()
         val localSet = UnreadState.locallyMarkedReviewedEventIds.value
         val filtered = withContext(Dispatchers.Default) {
-            if (_filterMode.value == EventsFilterMode.Unreviewed) {
-                events.filter { it.event_id !in localSet }
-            } else {
-                events
+            when (_filterMode.value) {
+                EventsFilterMode.Unreviewed -> events.filter { it.event_id !in localSet }
+                EventsFilterMode.Reviewed, EventsFilterMode.Saved -> events
             }
         }
         _displayedEvents.value = filtered
     }
 
     /** Switches filter mode and refetches. Persists mode to [SavedStateHandle] for rotation survival. */
-    fun setFilterMode(reviewed: Boolean) {
-        val newMode = if (reviewed) EventsFilterMode.Reviewed else EventsFilterMode.Unreviewed
-        if (_filterMode.value == newMode) return
-        _filterMode.value = newMode
-        savedStateHandle[KEY_FILTER_MODE] = newMode.name
-        _eventsPageTitle.value = titleForMode(newMode)
-        _filterToggleButtonLabel.value = toggleLabelForMode(newMode)
+    fun setFilterMode(mode: EventsFilterMode) {
+        if (_filterMode.value == mode) return
+        _filterMode.value = mode
+        savedStateHandle[KEY_FILTER_MODE] = mode.name
+        _eventsPageTitle.value = titleForMode(mode)
+        _dropdownSelectionLabel.value = dropdownLabelForMode(mode)
         loadEvents()
     }
 
@@ -174,7 +176,7 @@ class EventsViewModel(
         val isRefresh = currentSuccess != null
         _state.value = EventsState.Loading(if (isRefresh) currentSuccess else null)
         _eventsPageTitle.value = titleForMode(_filterMode.value)
-        _filterToggleButtonLabel.value = toggleLabelForMode(_filterMode.value)
+        _dropdownSelectionLabel.value = dropdownLabelForMode(_filterMode.value)
         updateDisplayedEvents()
         val baseUrlValue = preferences.getBaseUrlOnce()
         if (baseUrlValue == null) {
@@ -182,7 +184,11 @@ class EventsViewModel(
             updateDisplayedEvents()
             return
         }
-        val filter = if (_filterMode.value == EventsFilterMode.Reviewed) "reviewed" else "unreviewed"
+        val filter = when (_filterMode.value) {
+            EventsFilterMode.Unreviewed -> "unreviewed"
+            EventsFilterMode.Reviewed -> "reviewed"
+            EventsFilterMode.Saved -> "saved"
+        }
         try {
             val service = ApiClient.createService(baseUrlValue)
             val response = service.getEvents(filter = filter)
@@ -203,6 +209,7 @@ class EventsViewModel(
         val saved = savedStateHandle.get<String>(KEY_FILTER_MODE) ?: return EventsFilterMode.Unreviewed
         return when (saved) {
             EventsFilterMode.Reviewed.name -> EventsFilterMode.Reviewed
+            EventsFilterMode.Saved.name -> EventsFilterMode.Saved
             else -> EventsFilterMode.Unreviewed
         }
     }
@@ -210,11 +217,13 @@ class EventsViewModel(
     private fun titleForMode(mode: EventsFilterMode): String = when (mode) {
         EventsFilterMode.Unreviewed -> "Unreviewed Events"
         EventsFilterMode.Reviewed -> "Reviewed Events"
+        EventsFilterMode.Saved -> "Saved Events"
     }
 
-    private fun toggleLabelForMode(mode: EventsFilterMode): String = when (mode) {
-        EventsFilterMode.Unreviewed -> "View Reviewed Events"
-        EventsFilterMode.Reviewed -> "View Unreviewed Events"
+    private fun dropdownLabelForMode(mode: EventsFilterMode): String = when (mode) {
+        EventsFilterMode.Unreviewed -> "Unreviewed"
+        EventsFilterMode.Reviewed -> "Reviewed"
+        EventsFilterMode.Saved -> "Saved"
     }
 
     /**

@@ -11,19 +11,15 @@ import androidx.core.app.NotificationCompat
 import coil.Coil
 import coil.request.ImageRequest
 import coil.request.SuccessResult
-import coil.request.ErrorResult
 import com.example.frigateeventviewer.MainActivity
 import com.example.frigateeventviewer.R
-import com.example.frigateeventviewer.data.api.ApiClient
 import com.example.frigateeventviewer.data.preferences.SettingsPreferences
-import com.example.frigateeventviewer.data.util.EventMatching
 import com.example.frigateeventviewer.ui.util.buildMediaUrl
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.min
 
@@ -126,54 +122,6 @@ class FrigateFirebaseMessagingService : FirebaseMessagingService() {
         return null
     }
 
-    /**
-     * Tries to load the notification image from the same source as the events tab: GET /events,
-     * find event by ce_id, then use event.hosted_snapshot (else hosted_clip). Returns null on
-     * fetch failure, event not found, or bitmap load failure. Logs the failure reason to aid debugging.
-     */
-    private suspend fun loadNotificationBitmapFromApi(
-        context: Context,
-        baseUrl: String,
-        ceId: String
-    ): android.graphics.Bitmap? {
-        return try {
-            val service = ApiClient.createService(baseUrl)
-            val response = service.getEvents("all")
-            val event = EventMatching.findEventByCeId(response.events, ceId)
-            if (event == null) {
-                Log.w(TAG, "Notification image: event not found for ce_id=$ceId")
-                return null
-            }
-            val snapshotPath = event.hosted_snapshot?.takeIf { it.isNotBlank() }
-                ?: event.hosted_clip?.takeIf { it.isNotBlank() }
-            if (snapshotPath == null) {
-                Log.w(TAG, "Notification image: no snapshot/clip path for ce_id=$ceId")
-                return null
-            }
-            val url = buildMediaUrl(baseUrl, snapshotPath)
-            if (url == null) {
-                Log.w(TAG, "Notification image: buildMediaUrl returned null for ce_id=$ceId")
-                return null
-            }
-            val result = Coil.imageLoader(context).execute(
-                ImageRequest.Builder(context).data(url).allowHardware(false).build()
-            )
-            val bitmap = (result as? SuccessResult)?.drawable?.let { (it as? BitmapDrawable)?.bitmap }
-            if (bitmap == null) {
-                when (result) {
-                    is ErrorResult -> Log.w(TAG, "Notification image: Coil load failed for url=$url", result.throwable)
-                    else -> Log.w(TAG, "Notification image: Coil load failed for url=$url (result=${result::class.simpleName})")
-                }
-                return null
-            }
-            Log.d(TAG, "Notification image loaded from API for ce_id=$ceId")
-            bitmap
-        } catch (e: Exception) {
-            Log.w(TAG, "Notification image from API failed", e)
-            null
-        }
-    }
-
     override fun onNewToken(token: String) {
         super.onNewToken(token)
         serviceScope.launch {
@@ -222,7 +170,7 @@ class FrigateFirebaseMessagingService : FirebaseMessagingService() {
 
     /**
      * NEW phase: "Motion Detected" with live frame as large icon only (no BigPictureStyle).
-     * First tries API snapshot (same source as events tab), then FCM paths.
+     * Uses image_url when present, then FCM paths (live_frame_proxy, cropped_image_url).
      */
     private suspend fun handleNew(
         context: Context,
@@ -233,32 +181,24 @@ class FrigateFirebaseMessagingService : FirebaseMessagingService() {
     ) {
         var scaledBitmap = NotificationImageCache.get(eventNotification.ce_id)
         if (scaledBitmap == null) {
-        var bitmap: android.graphics.Bitmap? = null
-        val imageUrl = eventNotification.image_url
-        if (!imageUrl.isNullOrBlank() && (imageUrl.startsWith("http://") || imageUrl.startsWith("https://"))) {
-            bitmap = loadNotificationBitmapFromUrl(context, imageUrl)
-        }
-        if (bitmap == null) {
-        delay(2000) // Let VPN become default network after FCM wake (e.g. Tailscale on cellular)
-        bitmap = loadNotificationBitmapFromApi(context, baseUrl, eventNotification.ce_id)
-        if (bitmap == null) {
-            delay(1500)
-            bitmap = loadNotificationBitmapFromApi(context, baseUrl, eventNotification.ce_id)
-        }
-        if (bitmap == null) {
-            bitmap = loadNotificationBitmap(
-                context,
-                baseUrl,
-                eventNotification.live_frame_proxy,
-                eventNotification.cropped_image_url
-            )
-        }
-        }
-        if (bitmap == null) {
-            Log.w(TAG, "Notification image: no bitmap (API + fallback failed) for ce_id=${eventNotification.ce_id}")
-        }
-        scaledBitmap = bitmap?.let { scaleBitmapForNotification(it, context) }
-        scaledBitmap?.let { NotificationImageCache.put(eventNotification.ce_id, it) }
+            var bitmap: android.graphics.Bitmap? = null
+            val imageUrl = eventNotification.image_url
+            if (!imageUrl.isNullOrBlank() && (imageUrl.startsWith("http://") || imageUrl.startsWith("https://"))) {
+                bitmap = loadNotificationBitmapFromUrl(context, imageUrl)
+            }
+            if (bitmap == null) {
+                bitmap = loadNotificationBitmap(
+                    context,
+                    baseUrl,
+                    eventNotification.live_frame_proxy,
+                    eventNotification.cropped_image_url
+                )
+            }
+            if (bitmap == null) {
+                Log.w(TAG, "Notification image: no bitmap (image_url + payload paths failed) for ce_id=${eventNotification.ce_id}")
+            }
+            scaledBitmap = bitmap?.let { scaleBitmapForNotification(it, context) }
+            scaledBitmap?.let { NotificationImageCache.put(eventNotification.ce_id, it) }
         }
 
         val contentIntent = Intent(context, MainActivity::class.java).apply {
@@ -287,7 +227,7 @@ class FrigateFirebaseMessagingService : FirebaseMessagingService() {
 
     /**
      * SNAPSHOT_READY phase: update the same slot with BigPictureStyle cropped snapshot.
-     * First tries API snapshot (same source as events tab), then FCM paths.
+     * Uses image_url when present, then FCM paths (hosted_snapshot, cropped_image_url).
      */
     private suspend fun handleSnapshotReady(
         context: Context,
@@ -298,32 +238,24 @@ class FrigateFirebaseMessagingService : FirebaseMessagingService() {
     ) {
         var scaledBitmap = NotificationImageCache.get(eventNotification.ce_id)
         if (scaledBitmap == null) {
-        var bitmap: android.graphics.Bitmap? = null
-        val imageUrl = eventNotification.image_url
-        if (!imageUrl.isNullOrBlank() && (imageUrl.startsWith("http://") || imageUrl.startsWith("https://"))) {
-            bitmap = loadNotificationBitmapFromUrl(context, imageUrl)
-        }
-        if (bitmap == null) {
-        delay(2000) // Let VPN become default network after FCM wake (e.g. Tailscale on cellular)
-        bitmap = loadNotificationBitmapFromApi(context, baseUrl, eventNotification.ce_id)
-        if (bitmap == null) {
-            delay(1500)
-            bitmap = loadNotificationBitmapFromApi(context, baseUrl, eventNotification.ce_id)
-        }
-        if (bitmap == null) {
-            bitmap = loadNotificationBitmap(
-                context,
-                baseUrl,
-                eventNotification.hosted_snapshot,
-                eventNotification.cropped_image_url
-            )
-        }
-        }
-        if (bitmap == null) {
-            Log.w(TAG, "Notification image: no bitmap (API + fallback failed) for ce_id=${eventNotification.ce_id}")
-        }
-        scaledBitmap = bitmap?.let { scaleBitmapForNotification(it, context) }
-        scaledBitmap?.let { NotificationImageCache.put(eventNotification.ce_id, it) }
+            var bitmap: android.graphics.Bitmap? = null
+            val imageUrl = eventNotification.image_url
+            if (!imageUrl.isNullOrBlank() && (imageUrl.startsWith("http://") || imageUrl.startsWith("https://"))) {
+                bitmap = loadNotificationBitmapFromUrl(context, imageUrl)
+            }
+            if (bitmap == null) {
+                bitmap = loadNotificationBitmap(
+                    context,
+                    baseUrl,
+                    eventNotification.hosted_snapshot,
+                    eventNotification.cropped_image_url
+                )
+            }
+            if (bitmap == null) {
+                Log.w(TAG, "Notification image: no bitmap (image_url + payload paths failed) for ce_id=${eventNotification.ce_id}")
+            }
+            scaledBitmap = bitmap?.let { scaleBitmapForNotification(it, context) }
+            scaledBitmap?.let { NotificationImageCache.put(eventNotification.ce_id, it) }
         }
 
         val contentIntent = Intent(context, MainActivity::class.java).apply {
@@ -409,8 +341,8 @@ class FrigateFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     /**
-     * CLIP_READY phase: AI title/description, "Play" action, teaser as large icon. AI title/description, "Play" action, teaser as large icon.
-     * First tries API snapshot (same source as events tab), then FCM paths.
+     * CLIP_READY phase: AI title/description, "Play" action, teaser as large icon.
+     * Uses image_url when present, then FCM paths (notification_gif, cropped_image_url).
      */
     private suspend fun handleClipReady(
         context: Context,
@@ -421,32 +353,24 @@ class FrigateFirebaseMessagingService : FirebaseMessagingService() {
     ) {
         var scaledBitmap = NotificationImageCache.get(eventNotification.ce_id)
         if (scaledBitmap == null) {
-        var bitmap: android.graphics.Bitmap? = null
-        val imageUrl = eventNotification.image_url
-        if (!imageUrl.isNullOrBlank() && (imageUrl.startsWith("http://") || imageUrl.startsWith("https://"))) {
-            bitmap = loadNotificationBitmapFromUrl(context, imageUrl)
-        }
-        if (bitmap == null) {
-        delay(2000) // Let VPN become default network after FCM wake (e.g. Tailscale on cellular)
-        bitmap = loadNotificationBitmapFromApi(context, baseUrl, eventNotification.ce_id)
-        if (bitmap == null) {
-            delay(1500)
-            bitmap = loadNotificationBitmapFromApi(context, baseUrl, eventNotification.ce_id)
-        }
-        if (bitmap == null) {
-            bitmap = loadNotificationBitmap(
-                context,
-                baseUrl,
-                eventNotification.notification_gif,
-                eventNotification.cropped_image_url
-            )
-        }
-        }
-        if (bitmap == null) {
-            Log.w(TAG, "Notification image: no bitmap (API + fallback failed) for ce_id=${eventNotification.ce_id}")
-        }
-        scaledBitmap = bitmap?.let { scaleBitmapForNotification(it, context) }
-        scaledBitmap?.let { NotificationImageCache.put(eventNotification.ce_id, it) }
+            var bitmap: android.graphics.Bitmap? = null
+            val imageUrl = eventNotification.image_url
+            if (!imageUrl.isNullOrBlank() && (imageUrl.startsWith("http://") || imageUrl.startsWith("https://"))) {
+                bitmap = loadNotificationBitmapFromUrl(context, imageUrl)
+            }
+            if (bitmap == null) {
+                bitmap = loadNotificationBitmap(
+                    context,
+                    baseUrl,
+                    eventNotification.notification_gif,
+                    eventNotification.cropped_image_url
+                )
+            }
+            if (bitmap == null) {
+                Log.w(TAG, "Notification image: no bitmap (image_url + payload paths failed) for ce_id=${eventNotification.ce_id}")
+            }
+            scaledBitmap = bitmap?.let { scaleBitmapForNotification(it, context) }
+            scaledBitmap?.let { NotificationImageCache.put(eventNotification.ce_id, it) }
         }
 
         val contentIntent = Intent(context, MainActivity::class.java).apply {

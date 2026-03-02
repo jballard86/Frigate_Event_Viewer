@@ -124,13 +124,6 @@ class MainActivity : ComponentActivity() {
                     val ceIdFromUri = DeepLinkViewModel.parseDeepLinkCeId(uri)
                     val ceIdFromExtra = intent?.getStringExtra(FrigateFirebaseMessagingService.EXTRA_CE_ID)?.takeIf { it.isNotBlank() }
                     if (ceIdFromUri == null && ceIdFromExtra == null) {
-                        val preferences = SettingsPreferences(context.applicationContext)
-                        val baseUrl = preferences.getBaseUrlOnce()
-                        if (baseUrl != null) {
-                            navController.navigate("main_tabs") {
-                                popUpTo("settings") { inclusive = true }
-                            }
-                        }
                         FcmTokenManager(context.applicationContext).registerIfPossible()
                     }
                 }
@@ -160,7 +153,7 @@ class MainActivity : ComponentActivity() {
                             navController.popBackStack()
                         } else {
                             navController.navigate("main_tabs") {
-                                popUpTo("settings") { inclusive = true }
+                                popUpTo("main_tabs") { inclusive = true }
                             }
                         }
                         navController.navigate("event_detail")
@@ -168,7 +161,7 @@ class MainActivity : ComponentActivity() {
                         deepLinkViewModel.clearPending()
                     } else {
                         navController.navigate("main_tabs") {
-                            popUpTo("settings") { inclusive = true }
+                            popUpTo("main_tabs") { inclusive = true }
                         }
                         navController.navigate("event_not_found/$ceId")
                     }
@@ -176,7 +169,7 @@ class MainActivity : ComponentActivity() {
 
                 NavHost(
                     navController = navController,
-                    startDestination = "settings"
+                    startDestination = "main_tabs"
                 ) {
                     composable("settings") {
                         val canPop = navController.previousBackStackEntry != null

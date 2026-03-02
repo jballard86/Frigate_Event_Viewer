@@ -22,7 +22,7 @@ Apply these rules across all screens to keep the app visually consistent. **All 
 - **Video players:** Use a **16:9** aspect-ratio container (`Modifier.aspectRatio(16f / 9f)`), **RESIZE_MODE_ZOOM** so the frame is filled, and a **1-second (1000ms)** controller timeout (`controllerShowTimeoutMs = 1000`). **Landscape:** When the device is horizontal, the event-detail and dashboard recent-event video viewers use the full content height (below status bar and header), **RESIZE_MODE_FIT** (fit scaling, no zoom), and the same controller timeout; portrait behavior is unchanged.
 - **Push notifications:** Security-alert notification content follows the same title/body hierarchy as in-app UI: concise title (e.g. "Motion Detected", "Snapshot ready", or AI title) and body text. The notification shade uses `NotificationCompat` setContentTitle/setContentText (and BigPictureStyle where applicable); no Compose typography in the shade. See `FrigateFirebaseMessagingService` and `map.md` §5 (FCM phase-aware notifications).
 - **Stat cards / metric cards:** Dashboard-style cards that show a label and a numeric (or short) value must keep spacing consistent. Use a content **Column** with **Modifier.fillMaxWidth()** so the label and value are centered in the full card width (not left-aligned). Put the label on top (e.g. `labelMedium`), then a fixed gap (e.g. **4.dp**), then a **fixed-height value region** (e.g. `Box` with `Modifier.fillMaxWidth()` and `Modifier.heightIn(min = 32.dp)`) with the value **centered** (vertical and horizontal) so one-digit and multi-digit values align consistently. Reference: Dashboard `StatCard` in `DashboardScreen.kt`.
-- **Full-width filter/toggle buttons:** Used for mode toggles (e.g. Events tab Reviewed/Unreviewed). Place within the screen’s **16.dp** horizontal padding; **Modifier.fillMaxWidth().height(40.dp)**; **RoundedCornerShape(12.dp)**; single-line label. Use `OutlinedButton` or secondary-style `Button`. Example: EventsScreen toggle "View Reviewed Events" / "View Unreviewed Events".
+- **Full-width filter control (Events tab):** The Events tab uses a **dropdown** (not a toggle) with three options: Unreviewed, Reviewed, and Saved. Place within the screen’s **16.dp** horizontal padding; **Modifier.fillMaxWidth().height(40.dp)**; **RoundedCornerShape(12.dp)**. Use the same pattern as LiveScreen/SettingsScreen: read-only **OutlinedTextField** as trigger with **DropdownMenu** + **DropdownMenuItem**; capture width via `onGloballyPositioned` so the menu matches the trigger width.
 
 ---
 
@@ -41,7 +41,7 @@ When a screen needs **state that must survive configuration changes** (e.g. rota
 
 **Reference implementations:**
 
-- **Events tab:** `EventsViewModel` is created in MainActivity with `viewModelStoreOwner = activity` and `EventsViewModelFactory(sharedEventViewModel)`; filter mode (Reviewed/Unreviewed) is stored in SavedStateHandle. Passed via MainTabsScreen into EventsScreen.
+- **Events tab:** `EventsViewModel` is created in MainActivity with `viewModelStoreOwner = activity` and `EventsViewModelFactory(sharedEventViewModel)`; filter mode (Reviewed/Unreviewed/Saved) is stored in SavedStateHandle. Passed via MainTabsScreen into EventsScreen.
 - **Live tab:** `LiveViewModel` is created in MainActivity with `viewModelStoreOwner = activity` and `LiveViewModelFactory()`; selected camera is stored in SavedStateHandle. Passed via MainTabsScreen into LiveScreen.
 - **Main tabs:** `MainTabsViewModel` (selected tab index) follows the same pattern; it is activity-scoped so the selected tab survives rotation.
 
@@ -54,8 +54,7 @@ When adding a **new** screen that needs rotation-resistant state, follow this pa
 ```mermaid
 flowchart TD
     appLaunch["App launch"]
-    navHost["NavHost startDestination=settings"]
-    hasBaseUrl{"DataStore has base URL?"}
+    navHost["NavHost startDestination=main_tabs"]
     settingsScreen["SettingsScreen"]
     mainTabs["MainTabsScreen (pager)"]
     live["LiveScreen"]
@@ -66,12 +65,10 @@ flowchart TD
     bottomBar["Bottom bar visible"]
 
     appLaunch --> navHost
-    navHost --> settingsScreen
-    settingsScreen --> hasBaseUrl
-    hasBaseUrl -->|Yes| mainTabs
-    hasBaseUrl -->|No| settingsScreen
-    settingsScreen -->|Save base URL| mainTabs
+    navHost --> mainTabs
     mainTabs --> bottomBar
+    mainTabs -->|Settings icon| settingsScreen
+    settingsScreen -->|Save or Back| mainTabs
     bottomBar -->|Live tab or swipe| live
     bottomBar -->|Dashboard tab or swipe| dashboard
     bottomBar -->|Events tab or swipe| events
@@ -79,6 +76,7 @@ flowchart TD
     events -->|Tap event| eventDetail
     eventDetail -->|Back| events
     deeplink["buffer://event_detail/ce_id"] --> mainTabs
+    deeplink -->|No base URL| settingsScreen
     deeplink -->|Resolve to event| eventDetail
     deeplink -->|Not found| eventNotFound["EventNotFoundScreen"]
     notificationTap["Notification tap (EXTRA_CE_ID)"] --> mainTabs
@@ -92,10 +90,9 @@ flowchart TD
 
 **Flow summary:**
 
-- **App launch:** NavHost starts at route `"settings"`.
-- **Launch decision:** A `LaunchedEffect(Unit)` in MainActivity calls `SettingsPreferences.getBaseUrlOnce()`. If non-null, navigates to `"main_tabs"` (MainTabsScreen) and pops `"settings"` so back does not return to first-run.
-- **First run:** User stays on SettingsScreen until they enter a URL and tap Save (or launch decision already sent them to the tabbed main screen).
-- **After Save:** `onNavigateToDashboard` runs → navigate to `"main_tabs"`, pop `"settings"` inclusive.
+- **App launch:** NavHost starts at route `"main_tabs"`. The app opens directly on MainTabsScreen (default tab: Dashboard). Settings is not shown on launch.
+- **Settings access:** Settings is only entered via the header settings icon on main tabs (or when a deep link is opened and no base URL is configured). First-time users open Settings from that icon to configure the server.
+- **After Save (Settings):** `onNavigateToDashboard` runs → navigate to `"main_tabs"`, pop `"settings"` inclusive, so back stack returns to main tabs whether the user opened Settings from the icon or from a deep link.
 - **Bottom bar + pager:** MainTabsScreen owns a `Scaffold` with a bottom bar and a `HorizontalPager` with four pages: **Live**, Dashboard, Events, and Daily Review. **Default (start) tab is Dashboard** (page index 1) so the app opens on Dashboard; users can tap Live or swipe to reach the Live tab. Tapping a tab or swiping animates the pager to the corresponding page; the selected tab is stored in **MainTabsViewModel** (activity-scoped, `SavedStateHandle`) so it survives rotation.
 - **Orientation:** In landscape the bottom bar is hidden by default. Its visibility is animated (expand/shrink) via `AnimatedVisibility`. A semi-transparent drag handle (circle + chevron, opacity from Settings) appears at the bottom-right: when the bar is **closed** it floats in the content area (positioned with offset + zIndex); when the bar is **open** the same-style handle sits inside the bottom bar in a transparent strip above the NavigationBar. Drag up on the floating handle to show the bar; drag down on the in-bar handle to hide it. In portrait the bottom bar is always visible.
 - **Event detail:** From EventsScreen (inside the pager), tapping an event card sets `SharedEventViewModel.selectedEvent` and navigates to `"event_detail"`. EventDetailScreen shows video (or snapshot placeholder when no clip is ready yet), actions (Mark Reviewed, Keep, Delete), and metadata. Back (toolbar or system) clears selection and pops to the previous screen.
@@ -109,7 +106,7 @@ flowchart TD
 ### SettingsScreen
 
 - **Route:** `"settings"`
-- **Purpose:** First-run / onboarding; also reachable from main tabs via the header settings icon. User enters the Frigate Event Buffer server base URL and the **Frigate IP address** (hostname or IP for the Live tab go2rtc API; no scheme or port). **Default camera (Live tab):** Dropdown populated from the same go2rtc stream list (GET /api/go2rtc/streams); user can select a default camera or "None"; saved on Save. User can test connection (GET `/status`), and saves. After save (when coming from first-run), app navigates to dashboard and removes settings from back stack. When opened from main tabs, a TopAppBar with back icon is shown and back (or full-width swipe) returns to main tabs. Includes a **Landscape tab bar icon transparency** slider (0–100%) for the "Show tab bar" icon opacity in landscape; default 50%; may be hardcoded after testing.
+- **Purpose:** Not the start destination; reached from the main-tabs header settings icon (or from the deep-link flow when no base URL is configured). User enters the Frigate Event Buffer server base URL and the **Frigate IP address** (hostname or IP for the Live tab go2rtc API; no scheme or port). **Default camera (Live tab):** Dropdown populated from the same go2rtc stream list (GET /api/go2rtc/streams); user can select a default camera or "None"; saved on Save. User can test connection (GET `/status`), and saves. After Save, `onNavigateToDashboard` runs → navigate to `"main_tabs"` and pop settings (same behavior whether opened from the icon or from a deep link). When opened from main tabs, a TopAppBar with back icon is shown and back (or full-width swipe) returns to main tabs. Includes a **Landscape tab bar icon transparency** slider (0–100%) for the "Show tab bar" icon opacity in landscape; default 50%; may be hardcoded after testing.
 - **ViewModel:** `SettingsViewModel` (factory: `SettingsViewModelFactory`).
 - **States:**
   - `urlInput: StateFlow<String>` — current text in the URL field.
@@ -146,10 +143,10 @@ flowchart TD
 ### EventsScreen
 
 - **Route:** Hosted as page 2 inside `"main_tabs"` (MainTabsScreen pager)
-- **Purpose:** Lists events in one of two modes: **Unreviewed** or **Reviewed**. A full-width toggle button under the page title switches mode; the page title shows "Unreviewed Events" or "Reviewed Events" (from EventsViewModel, shown in MainTabsScreen topBar when Events tab is selected). Events show thumbnails (snapshot or clip), camera name, timestamp, label, and threat level. List rows use a minimal **EventCardItem** display model and stable LazyColumn keys for recomposition performance. Reviewed/unreviewed status uses the shared [UnreadState](app/src/main/java/com/example/frigateeventviewer/data/push/UnreadState.kt) (same source as the app icon badge): Mark Reviewed adds the id so the event disappears from the unreviewed list immediately; Delete removes the id. A watchdog prunes the set via GET /events?filter=all. Pull-to-refresh, retry on error. List refreshes when the user returns from event detail after Mark Reviewed / Keep / Delete, when the tab is selected, and when the app is opened or brought from background.
-- **ViewModel:** `EventsViewModel` (factory: `EventsViewModelFactory(sharedEventViewModel)` using **CreationExtras**). EventsViewModel is created in MainActivity at the top level of `setContent` with `viewModel(viewModelStoreOwner = activity, factory = EventsViewModelFactory(sharedEventViewModel))`, so it is **activity-scoped**. The factory obtains the Activity’s SavedStateHandle from `extras.createSavedStateHandle()` and Application from `extras[AndroidViewModelFactory.APPLICATION_KEY]`. **Filter mode** (Reviewed/Unreviewed) is stored in that SavedStateHandle so it survives configuration changes (e.g. rotation).
-- **States:** `EventsState` — `Loading(previous?)` | `Success(response)` | `Error(message, previous?)`. Also exposes `baseUrl`, `eventsPageTitle`, `filterToggleButtonLabel`, `displayedEvents` (filtered list; for Unreviewed, server list minus UnreadState.locallyMarkedReviewedEventIds).
-- **Data source:** `FrigateApiService.getEvents(filter = "reviewed" | "unreviewed")` depending on current mode; unreviewed list is server response filtered by UnreadState.locallyMarkedReviewedEventIds. Watchdog uses GET /events?filter=all and UnreadState.pruneToExistingIds.
+- **Purpose:** Lists events in one of **three** modes: **Unreviewed**, **Reviewed**, or **Saved**. A **dropdown** under the page title selects the mode; the page title shows "Unreviewed Events", "Reviewed Events", or "Saved Events" (from EventsViewModel, shown in MainTabsScreen topBar when Events tab is selected). Events show thumbnails (snapshot or clip), camera name, timestamp, label, and threat level. List rows use a minimal **EventCardItem** display model and stable LazyColumn keys for recomposition performance. Reviewed/unreviewed status uses the shared [UnreadState](app/src/main/java/com/example/frigateeventviewer/data/push/UnreadState.kt) (same source as the app icon badge): Mark Reviewed adds the id so the event disappears from the unreviewed list immediately; Delete removes the id. A watchdog prunes the set via GET /events?filter=all. Pull-to-refresh, retry on error. List refreshes when the user returns from event detail after Mark Reviewed / Keep / Delete, when the tab is selected, and when the app is opened or brought from background.
+- **ViewModel:** `EventsViewModel` (factory: `EventsViewModelFactory(sharedEventViewModel)` using **CreationExtras**). EventsViewModel is created in MainActivity at the top level of `setContent` with `viewModel(viewModelStoreOwner = activity, factory = EventsViewModelFactory(sharedEventViewModel))`, so it is **activity-scoped**. The factory obtains the Activity’s SavedStateHandle from `extras.createSavedStateHandle()` and Application from `extras[AndroidViewModelFactory.APPLICATION_KEY]`. **Filter mode** (Reviewed/Unreviewed/Saved) is stored in that SavedStateHandle so it survives configuration changes (e.g. rotation).
+- **States:** `EventsState` — `Loading(previous?)` | `Success(response)` | `Error(message, previous?)`. Also exposes `baseUrl`, `eventsPageTitle`, `dropdownSelectionLabel`, `displayedEvents` (filtered list; for Unreviewed, server list minus UnreadState.locallyMarkedReviewedEventIds; for Reviewed/Saved, server list as returned).
+- **Data source:** `FrigateApiService.getEvents(filter = "reviewed" | "unreviewed" | "saved")` depending on current mode; unreviewed list is server response filtered by UnreadState.locallyMarkedReviewedEventIds; Saved and Reviewed use the server list as-is. Watchdog uses GET /events?filter=all and UnreadState.pruneToExistingIds.
 - **Refresh triggers:** init, pull-to-refresh (force=true), `SharedEventViewModel.eventsRefreshRequested`, tab selected (force=false), app resume (force=false). Throttled by 5m staleness check.
 
 ---
