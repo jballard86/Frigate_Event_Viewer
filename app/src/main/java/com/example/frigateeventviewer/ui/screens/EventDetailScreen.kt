@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -45,9 +44,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.net.toUri
@@ -57,6 +54,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -71,7 +69,6 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import android.content.res.Configuration
 import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -171,10 +168,6 @@ fun EventDetailScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            val configuration = LocalConfiguration.current
-            val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-            val availableHeightDp: Dp? = if (isLandscape) maxHeight else null
-
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -185,58 +178,52 @@ fun EventDetailScreen(
                 val density = LocalDensity.current
                 val cycleThresholdPx = with(density) { cycleThresholdDp.toPx() }
                 val verticalSwipeModifier =
-                    if (selectedEvent != null && onCycleEvent != null) {
-                        Modifier.pointerInput(selectedEvent.event_id, cycleThresholdPx) {
+                    if (onCycleEvent != null) {
+                        Modifier.pointerInput(event.event_id, cycleThresholdPx) {
                             awaitPointerEventScope {
+                                var totalDragX = 0f
+                                var totalDragY = 0f
+                                var triggered = false
+
                                 while (true) {
-                                    val down = awaitFirstDown(
-                                        requireUnconsumed = false,
-                                        pass = PointerEventPass.Main
-                                    )
-                                    val pointerId = down.id
-                                    var totalDragX = 0f
-                                    var totalDragY = 0f
-                                    var triggered = false
-
-                                    while (true) {
-                                        val event = awaitPointerEvent(PointerEventPass.Main)
-                                        val change = event.changes.firstOrNull { it.id == pointerId }
-                                            ?: continue
-
-                                        if (!change.pressed) {
-                                            if (!change.isConsumed) {
-                                                change.consume()
-                                            }
-                                            break
+                                    val ev = awaitPointerEvent(PointerEventPass.Initial)
+                                    when (ev.type) {
+                                        PointerEventType.Press -> {
+                                            totalDragX = 0f
+                                            totalDragY = 0f
+                                            triggered = false
                                         }
-
-                                        if (triggered) {
-                                            if (!change.isConsumed) {
-                                                change.consume()
+                                        PointerEventType.Move -> {
+                                            if (triggered) {
+                                                ev.changes.forEach { it.consume() }
+                                                continue
                                             }
-                                            continue
-                                        }
-
-                                        if (!change.isConsumed) {
-                                            val deltaX =
-                                                change.position.x - change.previousPosition.x
-                                            val deltaY =
-                                                change.position.y - change.previousPosition.y
+                                            var deltaX = 0f
+                                            var deltaY = 0f
+                                            ev.changes.forEach { change ->
+                                                deltaX += change.position.x - change.previousPosition.x
+                                                deltaY += change.position.y - change.previousPosition.y
+                                            }
                                             totalDragX += deltaX
                                             totalDragY += deltaY
-                                            change.consume()
-
                                             if (totalDragY < -cycleThresholdPx &&
                                                 abs(totalDragY) > abs(totalDragX)
                                             ) {
                                                 triggered = true
                                                 onCycleEvent(1)
+                                                ev.changes.forEach { it.consume() }
                                             } else if (totalDragY > cycleThresholdPx &&
                                                 abs(totalDragY) > abs(totalDragX)
                                             ) {
                                                 triggered = true
                                                 onCycleEvent(-1)
+                                                ev.changes.forEach { it.consume() }
                                             }
+                                        }
+                                        else -> {
+                                            totalDragX = 0f
+                                            totalDragY = 0f
+                                            triggered = false
                                         }
                                     }
                                 }
@@ -245,19 +232,11 @@ fun EventDetailScreen(
                     } else {
                         Modifier
                     }
-                Box(modifier = Modifier.fillMaxWidth()) {
+                Box(modifier = Modifier.fillMaxWidth().then(verticalSwipeModifier)) {
                     EventVideoSection(
                         event = event,
-                        baseUrl = baseUrl,
-                        availableHeightDp = availableHeightDp
+                        baseUrl = baseUrl
                     )
-                    // Overlay on top so pointerInput receives touches (video AndroidView would consume them otherwise).
-                    val overlaySizeModifier = if (availableHeightDp != null) {
-                        Modifier.fillMaxWidth().height(availableHeightDp)
-                    } else {
-                        Modifier.fillMaxWidth().aspectRatio(16f / 9f)
-                    }
-                    Box(modifier = overlaySizeModifier.then(verticalSwipeModifier))
                 }
                 EventActionsSection(
                     eventPath = eventPath,
@@ -278,11 +257,11 @@ fun EventDetailScreen(
 @Composable
 private fun EventVideoSection(
     event: Event,
-    baseUrl: String?,
-    availableHeightDp: Dp? = null
+    baseUrl: String?
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    var videoAspectRatio by remember(event.camera, event.subdir) { mutableStateOf(16f / 9f) }
 
     val clipCandidateUrls = remember(event, baseUrl) {
         EventMediaPath.getClipPathCandidates(event).mapNotNull { buildMediaUrl(baseUrl, it) }.distinct()
@@ -291,25 +270,21 @@ private fun EventVideoSection(
         EventMediaPath.getPlaceholderPathCandidates(event).mapNotNull { buildMediaUrl(baseUrl, it) }.distinct()
     }
 
-    val videoModifier = if (availableHeightDp != null) {
-        Modifier.fillMaxWidth().height(availableHeightDp)
-    } else {
-        Modifier.fillMaxWidth().aspectRatio(16f / 9f)
-    }.clip(RoundedCornerShape(12.dp))
-
-    val isLandscape = availableHeightDp != null
-    val placeholderScale = if (isLandscape) ContentScale.Fit else ContentScale.Crop
+    val videoModifier = Modifier
+        .fillMaxWidth()
+        .aspectRatio(videoAspectRatio)
+        .clip(RoundedCornerShape(12.dp))
 
     if (clipCandidateUrls.isEmpty()) {
         if (placeholderCandidateUrls.isNotEmpty()) {
             EventPlaceholderImage(
                 candidateUrls = placeholderCandidateUrls,
-                modifier = videoModifier,
-                contentScale = placeholderScale
+                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp)),
+                contentScale = ContentScale.Fit
             )
         } else {
             Box(
-                modifier = videoModifier,
+                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -346,11 +321,21 @@ private fun EventVideoSection(
         }
     }
 
-    val resizeMode = if (isLandscape) {
-        AspectRatioFrameLayout.RESIZE_MODE_FIT
-    } else {
-        AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                val h = videoSize.height
+                if (h > 0) {
+                    videoAspectRatio = videoSize.width.toFloat() / h
+                }
+            }
+        }
+        player.addListener(listener)
+        onDispose {
+            player.removeListener(listener)
+        }
     }
+
     AndroidView(
         factory = {
             PlayerView(context).apply {
@@ -358,14 +343,14 @@ private fun EventVideoSection(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 )
-                setResizeMode(resizeMode)
+                setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT)
                 controllerShowTimeoutMs = 1000
                 this.player = player
             }
         },
         update = { playerView ->
             playerView.player = player
-            playerView.setResizeMode(resizeMode)
+            playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT)
         },
         modifier = videoModifier,
         onRelease = { playerView ->

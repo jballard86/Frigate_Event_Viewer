@@ -49,6 +49,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.VideoSize
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.DefaultLoadControl
@@ -205,7 +206,7 @@ class LiveViewModelFactory : ViewModelProvider.Factory {
 
 /**
  * Live tab screen: "Select Camera" dropdown (from go2rtc streams) and live video player.
- * Styling matches other main tab screens (16.dp padding, 12.dp shapes). Per UI_MAP: video 16:9, RoundedCornerShape(12.dp), RESIZE_MODE_ZOOM, controller 1s.
+ * Styling matches other main tab screens (16.dp padding, 12.dp shapes). Video uses original aspect ratio, fillMaxWidth, RESIZE_MODE_FIT, controller 1s.
  */
 @Composable
 private fun LiveVideoPlayer(
@@ -217,9 +218,10 @@ private fun LiveVideoPlayer(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    var videoAspectRatio by remember(streamUrl) { mutableStateOf(16f / 9f) }
     val videoModifier = modifier
         .fillMaxWidth()
-        .aspectRatio(16f / 9f)
+        .aspectRatio(videoAspectRatio)
         .clip(RoundedCornerShape(12.dp))
 
     if (streamUrl.isNullOrBlank()) {
@@ -246,7 +248,7 @@ private fun LiveVideoPlayer(
             )
             .build()
         ExoPlayer.Builder(context)
-            .setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
+            .setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT)
             .setLoadControl(loadControl)
             .build()
             .apply {
@@ -290,6 +292,13 @@ private fun LiveVideoPlayer(
     }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                val h = videoSize.height
+                if (h > 0) {
+                    videoAspectRatio = videoSize.width.toFloat() / h
+                }
+            }
+
             override fun onPlayerError(error: PlaybackException) {
                 val primaryMessage = when (val cause = error.cause) {
                     is HttpDataSource.InvalidResponseCodeException -> {
@@ -370,16 +379,16 @@ private fun LiveVideoPlayer(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.WRAP_CONTENT
                         )
-                        setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_ZOOM)
+                        setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT)
                         controllerShowTimeoutMs = 1000
                         this.player = player
                     }
                 },
                 update = { playerView ->
                     playerView.player = player
-                    playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_ZOOM)
+                    playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT)
                 },
-                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+                modifier = Modifier.fillMaxWidth().aspectRatio(videoAspectRatio),
                 onRelease = { playerView ->
                     playerView.player = null
                 }
@@ -393,7 +402,7 @@ private fun LiveVideoPlayer(
                 visible = !isVideoReady,
                 enter = fadeIn(),
                 exit = fadeOut(),
-                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                modifier = Modifier.fillMaxWidth().aspectRatio(videoAspectRatio)
             ) {
                 if (snapshotUrl != null) {
                     AsyncImage(
@@ -402,7 +411,7 @@ private fun LiveVideoPlayer(
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .aspectRatio(16f / 9f)
+                            .aspectRatio(videoAspectRatio)
                             .clip(RoundedCornerShape(12.dp))
                     )
                 }
