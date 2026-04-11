@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.offset
@@ -59,6 +60,7 @@ import com.example.frigateeventviewer.data.model.Event
 import com.example.frigateeventviewer.ui.screens.LiveViewModel
 import kotlinx.coroutines.launch
 import android.content.res.Configuration
+import android.util.Rational
 
 @Composable
 fun MainTabsScreen(
@@ -68,7 +70,9 @@ fun MainTabsScreen(
     dailyReviewViewModel: DailyReviewViewModel,
     eventsViewModel: EventsViewModel,
     liveViewModel: LiveViewModel,
-    landscapeTabIconAlphaProvider: () -> Float
+    landscapeTabIconAlphaProvider: () -> Float,
+    isInPipMode: Boolean = false,
+    onEnterPip: (Rational) -> Unit = {}
 ) {
     val selectedTabIndex by mainTabsViewModel.selectedTabIndex.collectAsState()
     val pagerState = rememberPagerState(
@@ -100,49 +104,54 @@ fun MainTabsScreen(
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
-            val eventsPageTitle by eventsViewModel.eventsPageTitle.collectAsState()
-            val settledTab = pagerState.settledPage
-            val pageTitle = when (settledTab) {
-                0 -> "Live"
-                1 -> "Dashboard"
-                2 -> eventsPageTitle
-                3 -> "Daily Review"
-                else -> ""
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = pageTitle,
-                    style = MaterialTheme.typography.headlineLarge
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
-                    if (settledTab == 1) {
+            if (!isInPipMode) {
+                val eventsPageTitle by eventsViewModel.eventsPageTitle.collectAsState()
+                val settledTab = pagerState.settledPage
+                val pageTitle = when (settledTab) {
+                    0 -> "Live"
+                    1 -> "Dashboard"
+                    2 -> eventsPageTitle
+                    3 -> "Daily Review"
+                    else -> ""
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = pageTitle,
+                        style = MaterialTheme.typography.headlineLarge
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
+                        if (settledTab == 1) {
+                            IconButton(
+                                onClick = { navController.navigate("snooze") }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.NotificationsOff,
+                                    contentDescription = "Snooze"
+                                )
+                            }
+                        }
                         IconButton(
-                            onClick = { navController.navigate("snooze") }
+                            onClick = { navController.navigate("settings") }
                         ) {
                             Icon(
-                                imageVector = Icons.Default.NotificationsOff,
-                                contentDescription = "Snooze"
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Settings"
                             )
                         }
-                    }
-                    IconButton(
-                        onClick = { navController.navigate("settings") }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "Settings"
-                        )
                     }
                 }
             }
         },
         bottomBar = {
+            if (isInPipMode) {
+                // No bottom nav in PiP; Live video fills the window.
+            } else {
             if (isLandscape) {
                 AnimatedVisibility(
                     visible = showBottomBarInLandscape,
@@ -291,17 +300,19 @@ fun MainTabsScreen(
                     }
                 }
             }
+            }
         }
     ) { innerPadding ->
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val currentPage = pagerState.currentPage
             val isLiveTabVisible = pagerState.currentPage == 0
+            val contentPadding = if (isInPipMode) PaddingValues(0.dp) else innerPadding
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding),
+                    .padding(contentPadding),
                 beyondViewportPageCount = 3
             ) { page ->
                 when (page) {
@@ -309,7 +320,9 @@ fun MainTabsScreen(
                         currentPage = currentPage,
                         pageIndex = 0,
                         viewModel = liveViewModel,
-                        isVisible = isLiveTabVisible
+                        isVisible = isLiveTabVisible,
+                        isInPipMode = isInPipMode,
+                        onEnterPip = onEnterPip
                     )
                     1 -> DashboardScreen(
                         currentPage = currentPage,
@@ -332,7 +345,7 @@ fun MainTabsScreen(
                     )
                 }
             }
-            if (isLandscape && !showBottomBarInLandscape) {
+            if (isLandscape && !showBottomBarInLandscape && !isInPipMode) {
                 Box(
                     modifier = Modifier
                         .zIndex(1f)

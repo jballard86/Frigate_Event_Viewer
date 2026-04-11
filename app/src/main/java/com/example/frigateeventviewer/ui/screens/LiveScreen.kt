@@ -1,6 +1,7 @@
 package com.example.frigateeventviewer.ui.screens
 
 import android.app.Application
+import android.util.Rational
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -16,10 +17,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -28,6 +31,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -216,6 +220,9 @@ private fun LiveVideoPlayer(
     streamName: String?,
     baseUrl: String?,
     isVisible: Boolean,
+    isInPipMode: Boolean,
+    onAspectRatioKnown: (Rational) -> Unit,
+    onPipAvailabilityChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -272,6 +279,7 @@ private fun LiveVideoPlayer(
         streamError = null
         streamStatus = "Connecting..."
         isVideoReady = false
+        onPipAvailabilityChanged(false)
     }
     LaunchedEffect(isVisible) {
         if (!isVisible) {
@@ -298,6 +306,7 @@ private fun LiveVideoPlayer(
                 val h = videoSize.height
                 if (h > 0) {
                     videoAspectRatio = videoSize.width.toFloat() / h
+                    onAspectRatioKnown(Rational(videoSize.width, videoSize.height))
                 }
             }
 
@@ -336,6 +345,7 @@ private fun LiveVideoPlayer(
                     primaryMessage
                 }
                 streamStatus = null
+                onPipAvailabilityChanged(false)
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -350,6 +360,9 @@ private fun LiveVideoPlayer(
                     }
                     else -> null
                 }
+                if (playbackState == Player.STATE_READY) {
+                    onPipAvailabilityChanged(true)
+                }
             }
         }
         player.addListener(listener)
@@ -358,10 +371,12 @@ private fun LiveVideoPlayer(
         }
     }
 
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, isInPipMode) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_PAUSE -> player.pause()
+                Lifecycle.Event.ON_PAUSE -> {
+                    if (!isInPipMode) player.pause()
+                }
                 else -> {}
             }
         }
@@ -382,13 +397,16 @@ private fun LiveVideoPlayer(
                             ViewGroup.LayoutParams.WRAP_CONTENT
                         )
                         setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT)
-                        controllerShowTimeoutMs = 1000
+                        useController = !isInPipMode
+                        controllerShowTimeoutMs = if (isInPipMode) 0 else 1000
                         this.player = player
                     }
                 },
                 update = { playerView ->
                     playerView.player = player
                     playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT)
+                    playerView.useController = !isInPipMode
+                    playerView.controllerShowTimeoutMs = if (isInPipMode) 0 else 1000
                 },
                 modifier = Modifier.fillMaxWidth().aspectRatio(videoAspectRatio),
                 onRelease = { playerView ->
@@ -447,7 +465,9 @@ fun LiveScreen(
     currentPage: Int,
     pageIndex: Int,
     viewModel: LiveViewModel,
-    isVisible: Boolean
+    isVisible: Boolean,
+    isInPipMode: Boolean = false,
+    onEnterPip: (Rational) -> Unit = {}
 ) {
     val state by viewModel.state.collectAsState()
     val selectedStreamName by viewModel.selectedStreamName.collectAsState()
@@ -457,6 +477,12 @@ fun LiveScreen(
     var dropdownExpanded by remember { mutableStateOf(false) }
     var dropdownWidthDp by remember { mutableStateOf(0.dp) }
     val density = LocalDensity.current
+    var pipAspectRatio by remember { mutableStateOf(Rational(16, 9)) }
+    var pipAvailable by remember { mutableStateOf(false) }
+
+    LaunchedEffect(liveStreamUrl) {
+        pipAvailable = false
+    }
 
     val dropdownLabel = when (val s = state) {
         is LiveState.Loading -> "Loading…"
@@ -464,82 +490,151 @@ fun LiveScreen(
         is LiveState.Error -> "No camera"
     }
     val isDropdownEnabled = state is LiveState.Success
+    val showPipButton = !isInPipMode &&
+        state is LiveState.Success &&
+        !liveStreamUrl.isNullOrBlank() &&
+        pipAvailable
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Select Camera",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Box(
-                modifier = Modifier
-                    .weight(1f, fill = true)
-                    .fillMaxWidth()
-                    .onGloballyPositioned { coordinates ->
-                        dropdownWidthDp = with(density) { coordinates.size.width.toDp() }
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(
+                    start = if (isInPipMode) 0.dp else 16.dp,
+                    top = if (isInPipMode) 0.dp else 8.dp,
+                    end = if (isInPipMode) 0.dp else 16.dp,
+                    bottom = if (isInPipMode) 0.dp else {
+                        if (showPipButton) 80.dp else 16.dp
                     }
-            ) {
-                OutlinedTextField(
-                    value = dropdownLabel,
-                    onValueChange = {},
-                    readOnly = true,
+                ),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            if (!isInPipMode) {
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    trailingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.ArrowDropDown,
-                            contentDescription = "Select camera: $dropdownLabel",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.outline,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                        focusedTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        unfocusedTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Select Camera",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                )
-                if (isDropdownEnabled) {
                     Box(
                         modifier = Modifier
+                            .weight(1f, fill = true)
                             .fillMaxWidth()
-                            .height(56.dp)
-                            .clickable(
-                                indication = null,
-                                interactionSource = remember { MutableInteractionSource() }
-                            ) { dropdownExpanded = true }
-                    )
-                }
-                if (state is LiveState.Success) {
-                    DropdownMenu(
-                        expanded = dropdownExpanded,
-                        onDismissRequest = { dropdownExpanded = false },
-                        modifier = if (dropdownWidthDp > 0.dp) Modifier.width(dropdownWidthDp) else Modifier,
-                        shape = RoundedCornerShape(12.dp)
+                            .onGloballyPositioned { coordinates ->
+                                dropdownWidthDp = with(density) { coordinates.size.width.toDp() }
+                            }
                     ) {
-                        if (displayStreamNames.isEmpty()) {
-                            DropdownMenuItem(
-                                text = { Text("No cameras") },
-                                onClick = { dropdownExpanded = false }
+                        OutlinedTextField(
+                            value = dropdownLabel,
+                            onValueChange = {},
+                            readOnly = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            trailingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = "Select camera: $dropdownLabel",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.outline,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                                focusedTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unfocusedTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                        } else {
-                            displayStreamNames.forEach { name ->
-                                DropdownMenuItem(
-                                    text = { Text(name) },
-                                    onClick = {
-                                        viewModel.setSelectedStreamName(name)
-                                        dropdownExpanded = false
+                        )
+                        if (isDropdownEnabled) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(56.dp)
+                                    .clickable(
+                                        indication = null,
+                                        interactionSource = remember { MutableInteractionSource() }
+                                    ) { dropdownExpanded = true }
+                            )
+                        }
+                        if (state is LiveState.Success) {
+                            DropdownMenu(
+                                expanded = dropdownExpanded,
+                                onDismissRequest = { dropdownExpanded = false },
+                                modifier = if (dropdownWidthDp > 0.dp) Modifier.width(dropdownWidthDp) else Modifier,
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                if (displayStreamNames.isEmpty()) {
+                                    DropdownMenuItem(
+                                        text = { Text("No cameras") },
+                                        onClick = { dropdownExpanded = false }
+                                    )
+                                } else {
+                                    displayStreamNames.forEach { name ->
+                                        DropdownMenuItem(
+                                            text = { Text(name) },
+                                            onClick = {
+                                                viewModel.setSelectedStreamName(name)
+                                                dropdownExpanded = false
+                                            }
+                                        )
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                when (val s = state) {
+                    is LiveState.Error -> {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Text(
+                                text = s.message,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            Button(onClick = { viewModel.refresh() }) {
+                                Text("Retry")
+                            }
+                        }
+                    }
+                    is LiveState.Success -> {
+                        LiveVideoPlayer(
+                            streamUrl = liveStreamUrl,
+                            streamName = selectedStreamName,
+                            baseUrl = liveFrigateBaseUrl,
+                            isVisible = isVisible,
+                            isInPipMode = isInPipMode,
+                            onAspectRatioKnown = { pipAspectRatio = it },
+                            onPipAvailabilityChanged = { pipAvailable = it }
+                        )
+                    }
+                    else -> {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                CircularProgressIndicator()
+                                Text(
+                                    text = "Loading…",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
@@ -547,54 +642,58 @@ fun LiveScreen(
                 }
             }
         }
-
-        Box(
+        LivePipBottomAction(
+            visible = showPipButton,
+            onClick = { onEnterPip(pipAspectRatio) },
             modifier = Modifier
-                .fillMaxSize()
-                .weight(1f),
-            contentAlignment = Alignment.Center
-        ) {
-            when (val s = state) {
-                is LiveState.Error -> {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Text(
-                            text = s.message,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        Button(onClick = { viewModel.refresh() }) {
-                            Text("Retry")
-                        }
-                    }
-                }
-                is LiveState.Success -> {
-                    LiveVideoPlayer(
-                        streamUrl = liveStreamUrl,
-                        streamName = selectedStreamName,
-                        baseUrl = liveFrigateBaseUrl,
-                        isVisible = isVisible
+                .fillMaxWidth()
+                .align(Alignment.BottomCenter)
+        )
+    }
+}
+
+/**
+ * Bottom overlay PiP action; matches [DailyReviewScreen] bottom button styling (primaryContainer, 40.dp, 12.dp shape).
+ */
+@Composable
+private fun LivePipBottomAction(
+    visible: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val edgeInset = 16.dp
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(),
+        exit = fadeOut(),
+        modifier = modifier
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = onClick,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = edgeInset)
+                    .height(40.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PictureInPictureAlt,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
                     )
-                }
-                else -> {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            CircularProgressIndicator()
-                            Text(
-                                text = "Loading…",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+                    Text(
+                        text = "Picture in picture",
+                        maxLines = 1
+                    )
                 }
             }
         }

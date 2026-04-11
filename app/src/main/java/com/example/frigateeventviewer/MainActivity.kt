@@ -1,9 +1,12 @@
 package com.example.frigateeventviewer
 
+import android.app.PictureInPictureParams
 import android.content.Intent
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
@@ -12,6 +15,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.net.toUri
@@ -56,6 +60,9 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
 
+    /** Drives Compose recomposition when PiP mode changes; updated from [onPictureInPictureModeChanged]. */
+    private val isInPipModeState = mutableStateOf(false)
+
     private val requestNotificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { _ ->
@@ -91,8 +98,30 @@ class MainActivity : ComponentActivity() {
         UnreadBadgeHelper.updateFromServer(applicationContext)
     }
 
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        isInPipModeState.value = isInPictureInPictureMode
+    }
+
+    /**
+     * Enters picture-in-picture with the given video aspect ratio. Caller must only invoke when
+     * a live stream is playing (Live tab PiP button).
+     */
+    fun enterPip(aspectRatio: Rational) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val params = PictureInPictureParams.Builder()
+            .setAspectRatio(aspectRatio)
+            .setSeamlessResizeEnabled(true)
+            .build()
+        enterPictureInPictureMode(params)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        isInPipModeState.value = isInPictureInPictureMode
         enableEdgeToEdge()
         val activity = this
         setContent {
@@ -114,6 +143,7 @@ class MainActivity : ComponentActivity() {
                 )
                 val context = LocalContext.current
                 val resolveTrigger by deepLinkViewModel.resolveTrigger.collectAsState(initial = 0)
+                val isInPipMode by isInPipModeState
 
                 // Wait one frame so NavHost is composed before any navigate().
                 LaunchedEffect(Unit) {
@@ -195,7 +225,9 @@ class MainActivity : ComponentActivity() {
                             dailyReviewViewModel = dailyReviewViewModel,
                             eventsViewModel = eventsViewModel,
                             liveViewModel = liveViewModel,
-                            landscapeTabIconAlphaProvider = { 0.5f }
+                            landscapeTabIconAlphaProvider = { 0.5f },
+                            isInPipMode = isInPipMode,
+                            onEnterPip = { ratio -> activity.enterPip(ratio) }
                         )
                     }
                     composable(
