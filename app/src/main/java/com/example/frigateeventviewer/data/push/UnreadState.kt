@@ -84,4 +84,20 @@ object UnreadState {
             )
         }
     }
+
+    /** Clears optimistic mark-reviewed IDs after POST /viewed/all (server marked everything reviewed). */
+    suspend fun clearLocallyMarkedReviewed() {
+        mutex.withLock {
+            _state.value = _state.value.copy(locallyMarkedReviewedEventIds = emptySet())
+        }
+    }
+
+    /** Removes one id from the local set (e.g. after unmark viewed on server). */
+    suspend fun removeLocalMarkedReviewedIfPresent(eventId: String) {
+        mutex.withLock {
+            _state.value = _state.value.copy(
+                locallyMarkedReviewedEventIds = _state.value.locallyMarkedReviewedEventIds - eventId
+            )
+        }
+    }
 }

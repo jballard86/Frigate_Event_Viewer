@@ -12,6 +12,7 @@ import com.example.frigateeventviewer.data.api.ApiClient
 import com.example.frigateeventviewer.data.model.Event
 import com.example.frigateeventviewer.data.model.EventsResponse
 import com.example.frigateeventviewer.data.preferences.SettingsPreferences
+import com.example.frigateeventviewer.data.push.UnreadBadgeHelper
 import com.example.frigateeventviewer.data.push.UnreadState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -77,6 +79,16 @@ class EventsViewModel(
             initialValue = null
         )
 
+    /**
+     * Mirrors DataStore: when false, Events tab hides the camera dropdown and clears any saved filter.
+     */
+    val showEventsCameraFilter: StateFlow<Boolean> = preferences.showEventsCameraFilter
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = false
+        )
+
     private val _state = MutableStateFlow<EventsState>(EventsState.Loading(null))
     val state: StateFlow<EventsState> = _state.asStateFlow()
 
@@ -88,11 +100,39 @@ class EventsViewModel(
     private val _dropdownSelectionLabel = MutableStateFlow(dropdownLabelForMode(_filterMode.value))
     val dropdownSelectionLabel: StateFlow<String> = _dropdownSelectionLabel.asStateFlow()
 
+    /**
+     * When null, loads GET /events; when set, GET /events/&lt;camera&gt; (contract §1.3).
+     * Restored from [SavedStateHandle] for rotation.
+     */
+    private val _cameraFilter = MutableStateFlow(restoreCameraFilter())
+    val cameraFilter: StateFlow<String?> = _cameraFilter.asStateFlow()
+
+    /** Camera names for the secondary dropdown (from last successful list + optional fetch). */
+    private val _cameraNamesForFilter = MutableStateFlow<List<String>>(emptyList())
+    val cameraNamesForFilter: StateFlow<List<String>> = _cameraNamesForFilter.asStateFlow()
+
+    private val _markAllViewedError = MutableStateFlow<String?>(null)
+    val markAllViewedError: StateFlow<String?> = _markAllViewedError.asStateFlow()
+
     init {
         if (savedStateHandle.get<String>(KEY_FILTER_MODE) == null) {
             savedStateHandle[KEY_FILTER_MODE] = _filterMode.value.name
         }
-        loadEvents()
+        viewModelScope.launch {
+            val showFilter = preferences.getShowEventsCameraFilterOnce()
+            if (!showFilter && _cameraFilter.value != null) {
+                savedStateHandle[KEY_CAMERA_FILTER] = null
+                _cameraFilter.value = null
+            }
+            loadEvents()
+        }
+        viewModelScope.launch {
+            preferences.showEventsCameraFilter.drop(1).collect { showFilter ->
+                if (!showFilter && _cameraFilter.value != null) {
+                    setCameraFilter(null)
+                }
+            }
+        }
         viewModelScope.launch {
             UnreadState.locallyMarkedReviewedEventIds.collect {
                 updateDisplayedEvents()
@@ -148,6 +188,55 @@ class EventsViewModel(
         _eventsPageTitle.value = titleForMode(mode)
         _dropdownSelectionLabel.value = dropdownLabelForMode(mode)
         loadEvents()
+    }
+
+    /**
+     * Restricts the list to one camera, or [null] for all cameras.
+     * Persists to [SavedStateHandle].
+     */
+    fun setCameraFilter(camera: String?) {
+        if (_cameraFilter.value == camera) return
+        _cameraFilter.value = camera
+        if (camera == null) {
+            savedStateHandle[KEY_CAMERA_FILTER] = null
+        } else {
+            savedStateHandle[KEY_CAMERA_FILTER] = camera
+        }
+        loadEvents()
+    }
+
+    fun clearMarkAllViewedError() {
+        _markAllViewedError.value = null
+    }
+
+    /**
+     * POST /viewed/all when in Unreviewed mode; refreshes list and badge.
+     */
+    fun markAllViewed() {
+        viewModelScope.launch {
+            if (_filterMode.value != EventsFilterMode.Unreviewed) return@launch
+            val baseUrlValue = preferences.getBaseUrlOnce()
+            if (baseUrlValue == null) {
+                _markAllViewedError.value = "No server URL"
+                return@launch
+            }
+            try {
+                val service = ApiClient.createService(baseUrlValue)
+                service.markAllViewed()
+                UnreadState.clearLocallyMarkedReviewed()
+                val unread = service.getUnreadCount()
+                UnreadState.recordFetchedUnreadCount(unread.unread_count)
+                withContext(Dispatchers.Main) {
+                    UnreadBadgeHelper.applyBadge(
+                        getApplication(),
+                        UnreadState.currentEffectiveUnreadCount()
+                    )
+                }
+                loadEvents()
+            } catch (e: Exception) {
+                _markAllViewedError.value = e.message ?: "Failed to mark all reviewed"
+            }
+        }
     }
 
     /**
@@ -214,7 +303,23 @@ class EventsViewModel(
         }
         try {
             val service = ApiClient.createService(baseUrlValue)
-            val response = service.getEvents(filter = filter)
+            val showCameraFilter = preferences.getShowEventsCameraFilterOnce()
+            val camera = if (showCameraFilter) _cameraFilter.value else null
+            val response = if (camera.isNullOrBlank()) {
+                service.getEvents(filter = filter)
+            } else {
+                service.getEventsByCamera(camera = camera, filter = filter)
+            }
+            val serverCameraNames = if (showCameraFilter) {
+                try {
+                    service.getCameras().cameras
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            } else {
+                emptyList()
+            }
+            _cameraNamesForFilter.value = mergeCameraNamesAfterLoad(response, serverCameraNames)
             _state.value = EventsState.Success(response)
             updateDisplayedEvents()
             lastFetchTime = System.currentTimeMillis()
@@ -235,6 +340,26 @@ class EventsViewModel(
             EventsFilterMode.Saved.name -> EventsFilterMode.Saved
             else -> EventsFilterMode.Unreviewed
         }
+    }
+
+    private fun restoreCameraFilter(): String? {
+        return savedStateHandle.get<String>(KEY_CAMERA_FILTER)?.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * Builds sorted camera list for the filter dropdown: prefers [serverCameraNames] from GET /cameras,
+     * merges event-derived names, and drops reserved path segments (e.g. consolidated "events") that are not real cameras.
+     */
+    private fun mergeCameraNamesAfterLoad(response: EventsResponse, serverCameraNames: List<String>): List<String> {
+        val fromEvents = response.events.map { it.camera }.distinct()
+        val reservedLowercase = setOf("all", "events")
+        return (serverCameraNames + response.cameras + fromEvents)
+            .asSequence()
+            .map { it.trim() }
+            .filter { it.isNotBlank() && it.lowercase() !in reservedLowercase }
+            .distinct()
+            .sorted()
+            .toList()
     }
 
     private fun titleForMode(mode: EventsFilterMode): String = when (mode) {
@@ -272,6 +397,7 @@ class EventsViewModel(
 
     companion object {
         private const val KEY_FILTER_MODE = "events_filter_mode"
+        private const val KEY_CAMERA_FILTER = "events_camera_filter"
     }
 }
 

@@ -1,6 +1,7 @@
 package com.example.frigateeventviewer.ui.util
 
 import android.graphics.drawable.BitmapDrawable
+import android.util.Log
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import coil.ImageLoader
@@ -37,12 +38,17 @@ class StreamingVideoFetcher(
                     isSampled = false,
                     dataSource = DataSource.NETWORK
                 )
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to fetch video frame for thumbnail", e)
                 null
             } finally {
                 retriever.release()
             }
         }
+    }
+
+    companion object {
+        private const val TAG = "StreamingVideoFetcher"
     }
 
     class Factory : Fetcher.Factory<Uri> {

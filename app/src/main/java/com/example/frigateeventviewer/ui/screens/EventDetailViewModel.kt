@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
  */
 enum class EventDetailAction {
     MARK_VIEWED,
+    UNMARK_VIEWED,
     KEEP,
     DELETE
 }
@@ -62,6 +63,13 @@ class EventDetailViewModel(application: Application) : AndroidViewModel(applicat
     fun markViewed(eventPath: String) {
         performAction(EventDetailAction.MARK_VIEWED) { baseUrlValue ->
             ApiClient.createService(baseUrlValue).markViewed(eventPath)
+        }
+    }
+
+    /** Restores event to unreviewed (DELETE /viewed/...). Contract §1.7. */
+    fun unmarkViewed(eventPath: String) {
+        performAction(EventDetailAction.UNMARK_VIEWED) { baseUrlValue ->
+            ApiClient.createService(baseUrlValue).unmarkViewed(eventPath)
         }
     }
 

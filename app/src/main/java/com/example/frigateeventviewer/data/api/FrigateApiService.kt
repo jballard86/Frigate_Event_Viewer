@@ -11,6 +11,7 @@ import com.example.frigateeventviewer.data.model.UnreadCountResponse
 import com.example.frigateeventviewer.data.model.DailyReviewDatesResponse
 import com.example.frigateeventviewer.data.model.DailyReviewResponse
 import com.example.frigateeventviewer.data.model.GenerateReportResponse
+import com.example.frigateeventviewer.data.model.MarkAllViewedResponse
 import com.example.frigateeventviewer.data.model.RegisterDeviceRequest
 import com.example.frigateeventviewer.data.model.RegisterDeviceResponse
 import okhttp3.MediaType.Companion.toMediaType
@@ -31,6 +32,13 @@ interface FrigateApiService {
 
     @GET("events")
     suspend fun getEvents(
+        @Query("filter") filter: String? = null
+    ): EventsResponse
+
+    /** List events for one camera (GET /events/&lt;camera&gt;). Contract §1.3. */
+    @GET("events/{camera}")
+    suspend fun getEventsByCamera(
+        @Path("camera", encoded = true) camera: String,
         @Query("filter") filter: String? = null
     ): EventsResponse
 
@@ -70,6 +78,16 @@ interface FrigateApiService {
     suspend fun markViewed(
         @Path("event_path", encoded = true) eventPath: String
     )
+
+    /** Unmarks viewed (DELETE /viewed/&lt;path:event_path&gt;). Contract §1.7. */
+    @DELETE("viewed/{event_path}")
+    suspend fun unmarkViewed(
+        @Path("event_path", encoded = true) eventPath: String
+    )
+
+    /** Marks all events viewed (POST /viewed/all). Contract §1.8. */
+    @POST("viewed/all")
+    suspend fun markAllViewed(): MarkAllViewedResponse
 
     /** Moves the event to saved (POST /keep/&lt;path:event_path&gt;). Contract §1.4. */
     @POST("keep/{event_path}")

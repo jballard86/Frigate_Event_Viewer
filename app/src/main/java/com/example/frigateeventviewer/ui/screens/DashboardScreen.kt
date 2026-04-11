@@ -56,6 +56,7 @@ import com.example.frigateeventviewer.data.model.Event
 import com.example.frigateeventviewer.data.model.StatsResponse
 import com.example.frigateeventviewer.ui.util.EventMediaPath
 import com.example.frigateeventviewer.ui.util.buildMediaUrl
+import com.example.frigateeventviewer.ui.util.parseTimestampToEpochSeconds
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -110,7 +111,17 @@ fun DashboardScreen(
                 )
             }
             is DashboardState.Error -> {
-                DashboardError(message = s.message, onRetry = { viewModel.refresh(force = true) })
+                if (s.previous != null) {
+                    DashboardContent(
+                        stats = s.previous,
+                        recentEvent = recentEvent,
+                        baseUrl = baseUrl,
+                        onRetry = { viewModel.refresh(force = true) },
+                        errorBannerMessage = s.message
+                    )
+                } else {
+                    DashboardError(message = s.message, onRetry = { viewModel.refresh(force = true) })
+                }
             }
         }
         }
@@ -163,7 +174,8 @@ private fun DashboardContent(
     stats: StatsResponse,
     recentEvent: Event?,
     baseUrl: String?,
-    onRetry: () -> Unit
+    onRetry: () -> Unit,
+    errorBannerMessage: String? = null
 ) {
     val scrollState = rememberScrollState()
     Column(
@@ -173,6 +185,21 @@ private fun DashboardContent(
             .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        if (errorBannerMessage != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = errorBannerMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.weight(1f)
+                )
+                Button(onClick = onRetry) { Text("Retry") }
+            }
+        }
         RecentEventCard(
             event = recentEvent,
             baseUrl = baseUrl
@@ -410,9 +437,7 @@ private fun RecentEventVideoPlayer(
 @Composable
 private fun RecentEventTextSection(event: Event) {
     val relativeTime = remember(event.timestamp) {
-        val seconds = event.timestamp.toDoubleOrNull()?.toLong()
-            ?: event.timestamp.substringBefore('.').toLongOrNull()
-            ?: 0L
+        val seconds = parseTimestampToEpochSeconds(event.timestamp)
         val timeMillis = seconds * 1000L
         DateUtils.getRelativeTimeSpanString(
             timeMillis,

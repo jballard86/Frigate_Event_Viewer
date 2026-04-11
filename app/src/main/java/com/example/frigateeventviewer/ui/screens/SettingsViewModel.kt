@@ -66,11 +66,27 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _defaultCameraSelection = MutableStateFlow<String?>(null)
     val defaultCameraSelection: StateFlow<String?> = _defaultCameraSelection.asStateFlow()
 
+    /**
+     * When true, the Events tab shows the per-camera filter dropdown (default off in DataStore).
+     */
+    val showEventsCameraFilter: StateFlow<Boolean> = preferences.showEventsCameraFilter
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = false
+        )
+
     init {
         viewModelScope.launch {
             _urlInput.value = preferences.getBaseUrlOnce()?.trimEnd('/') ?: ""
             _frigateIpInput.value = preferences.getFrigateIpOnce() ?: ""
             _defaultCameraSelection.value = preferences.getDefaultLiveCameraOnce()
+        }
+    }
+
+    fun setShowEventsCameraFilter(show: Boolean) {
+        viewModelScope.launch {
+            preferences.saveShowEventsCameraFilter(show)
         }
     }
 

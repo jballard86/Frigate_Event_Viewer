@@ -3,6 +3,7 @@ package com.example.frigateeventviewer.ui.screens
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.frigateeventviewer.data.model.Event
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -35,7 +36,11 @@ class SharedEventViewModel : ViewModel() {
     private val _selectedEvent = MutableStateFlow<Event?>(null)
     val selectedEvent: StateFlow<Event?> = _selectedEvent.asStateFlow()
 
-    private val _eventsRefreshRequested = MutableSharedFlow<EventRefreshPayload>(replay = 0)
+    private val _eventsRefreshRequested = MutableSharedFlow<EventRefreshPayload>(
+        replay = 0,
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
     /** Emits when the events list should refresh (e.g. after Mark Reviewed / Keep / Delete). */
     val eventsRefreshRequested: SharedFlow<EventRefreshPayload> = _eventsRefreshRequested.asSharedFlow()
 

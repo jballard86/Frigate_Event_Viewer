@@ -25,7 +25,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -77,13 +77,17 @@ import java.util.Locale
  * Human-readable label for a report day (Today / Yesterday / short date).
  */
 internal fun formatDailyReviewDateLabel(isoDate: String, zoneId: ZoneId = ZoneId.systemDefault()): String {
-    val date = LocalDate.parse(isoDate)
-    val today = LocalDate.now(zoneId)
-    val yesterday = today.minusDays(1)
-    return when (date) {
-        today -> "Today"
-        yesterday -> "Yesterday"
-        else -> date.format(DateTimeFormatter.ofPattern("EEE, MMM d", Locale.getDefault()))
+    return try {
+        val date = LocalDate.parse(isoDate)
+        val today = LocalDate.now(zoneId)
+        val yesterday = today.minusDays(1)
+        when (date) {
+            today -> "Today"
+            yesterday -> "Yesterday"
+            else -> date.format(DateTimeFormatter.ofPattern("EEE, MMM d", Locale.getDefault()))
+        }
+    } catch (_: Exception) {
+        isoDate
     }
 }
 
@@ -205,7 +209,7 @@ fun DailyReviewScreen(
                                 } else {
                                     Icon(
                                         imageVector = Icons.Default.ArrowDropDown,
-                                        contentDescription = null,
+                                        contentDescription = "Select report day: $triggerLabel",
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
@@ -338,7 +342,7 @@ private fun DailyReviewBottomActions(
                         putExtra(Intent.EXTRA_TEXT, md)
                         putExtra(Intent.EXTRA_SUBJECT, "Daily report $d")
                     }
-                    context.startActivity(Intent.createChooser(sendIntent, "Save report"))
+                    context.startActivity(Intent.createChooser(sendIntent, "Share report"))
                 },
                 enabled = !markdownText.isNullOrBlank() && !reportDateIso.isNullOrBlank(),
                 modifier = Modifier
@@ -356,12 +360,12 @@ private fun DailyReviewBottomActions(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Save,
-                        contentDescription = null,
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "Share report",
                         modifier = Modifier.size(20.dp),
                     )
                     Text(
-                        text = "Save",
+                        text = "Share report",
                         maxLines = 1,
                     )
                 }

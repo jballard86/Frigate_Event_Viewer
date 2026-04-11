@@ -1,7 +1,11 @@
 package com.example.frigateeventviewer.ui.screens
 
 import android.net.Uri
+import android.view.LayoutInflater
+import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -17,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -39,9 +44,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -58,17 +60,16 @@ import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import com.example.frigateeventviewer.R
 import com.example.frigateeventviewer.data.model.Event
 import com.example.frigateeventviewer.ui.util.EventMediaPath
+import com.example.frigateeventviewer.ui.util.formatCameraName
+import com.example.frigateeventviewer.ui.util.formatTimestamp
 import com.example.frigateeventviewer.ui.util.buildMediaUrl
 import com.example.frigateeventviewer.ui.util.SwipeBackBox
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -78,6 +79,11 @@ fun EventDetailScreen(
     onBack: () -> Unit,
     eventListLabel: String? = null,
     onCycleEvent: ((Int) -> Unit)? = null,
+    canNavigatePrevious: Boolean = false,
+    canNavigateNext: Boolean = false,
+    onCyclePrevious: () -> Unit = {},
+    onCycleNext: () -> Unit = {},
+    onUnmarkCompleted: () -> Unit = {},
     onEventActionCompleted: (markedReviewedEventId: String?, deletedEventId: String?, advanceFromCurrent: Boolean) -> Unit = { _, _, _ -> },
     viewModel: EventDetailViewModel = viewModel<EventDetailViewModel>(
         factory = EventDetailViewModelFactory(
@@ -103,6 +109,11 @@ fun EventDetailScreen(
                 EventDetailAction.MARK_VIEWED -> {
                     onEventActionCompleted(selectedEvent?.event_id, null, false)
                     snackbarHostState.showSnackbar("Marked as reviewed")
+                    viewModel.resetOperationState()
+                }
+                EventDetailAction.UNMARK_VIEWED -> {
+                    onUnmarkCompleted()
+                    snackbarHostState.showSnackbar("Unmarked as reviewed")
                     viewModel.resetOperationState()
                 }
             }
@@ -134,7 +145,7 @@ fun EventDetailScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
         SwipeBackBox(
-            enabled = true,
+            enabled = false,
             onBack = onBack,
             modifier = Modifier.fillMaxSize()
         ) {
@@ -174,75 +185,56 @@ fun EventDetailScreen(
                     .padding(horizontal = 16.dp)
                     .verticalScroll(rememberScrollState())
             ) {
-                val cycleThresholdDp = 50.dp
-                val density = LocalDensity.current
-                val cycleThresholdPx = with(density) { cycleThresholdDp.toPx() }
-                val verticalSwipeModifier =
-                    if (onCycleEvent != null) {
-                        Modifier.pointerInput(event.event_id, cycleThresholdPx) {
-                            awaitPointerEventScope {
-                                var totalDragX = 0f
-                                var totalDragY = 0f
-                                var triggered = false
-
-                                while (true) {
-                                    val ev = awaitPointerEvent(PointerEventPass.Initial)
-                                    when (ev.type) {
-                                        PointerEventType.Press -> {
-                                            totalDragX = 0f
-                                            totalDragY = 0f
-                                            triggered = false
-                                        }
-                                        PointerEventType.Move -> {
-                                            if (triggered) {
-                                                ev.changes.forEach { it.consume() }
-                                                continue
-                                            }
-                                            var deltaX = 0f
-                                            var deltaY = 0f
-                                            ev.changes.forEach { change ->
-                                                deltaX += change.position.x - change.previousPosition.x
-                                                deltaY += change.position.y - change.previousPosition.y
-                                            }
-                                            totalDragX += deltaX
-                                            totalDragY += deltaY
-                                            if (totalDragY < -cycleThresholdPx &&
-                                                abs(totalDragY) > abs(totalDragX)
-                                            ) {
-                                                triggered = true
-                                                onCycleEvent(1)
-                                                ev.changes.forEach { it.consume() }
-                                            } else if (totalDragY > cycleThresholdPx &&
-                                                abs(totalDragY) > abs(totalDragX)
-                                            ) {
-                                                triggered = true
-                                                onCycleEvent(-1)
-                                                ev.changes.forEach { it.consume() }
-                                            }
-                                        }
-                                        else -> {
-                                            totalDragX = 0f
-                                            totalDragY = 0f
-                                            triggered = false
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        Modifier
-                    }
-                Box(modifier = Modifier.fillMaxWidth().then(verticalSwipeModifier)) {
+                Box(modifier = Modifier.fillMaxWidth()) {
                     EventVideoSection(
                         event = event,
-                        baseUrl = baseUrl
+                        baseUrl = baseUrl,
+                        onVerticalSwipe = onCycleEvent
                     )
+                }
+                if (canNavigatePrevious || canNavigateNext) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Swipe on video or use buttons to move between events in this list",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            IconButton(
+                                onClick = onCyclePrevious,
+                                enabled = canNavigatePrevious && !isOperationLoading
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Previous event"
+                                )
+                            }
+                            IconButton(
+                                onClick = onCycleNext,
+                                enabled = canNavigateNext && !isOperationLoading
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.ArrowForward,
+                                    contentDescription = "Next event"
+                                )
+                            }
+                        }
+                    }
                 }
                 EventActionsSection(
                     eventPath = eventPath,
                     saved = event.saved == true,
+                    viewed = event.viewed,
                     isLoading = isOperationLoading,
                     onMarkReviewed = { viewModel.markViewed(eventPath) },
+                    onUnmarkReviewed = { viewModel.unmarkViewed(eventPath) },
                     onKeep = { viewModel.keepEvent(eventPath) },
                     onDelete = { viewModel.deleteEvent(eventPath) }
                 )
@@ -257,10 +249,12 @@ fun EventDetailScreen(
 @Composable
 private fun EventVideoSection(
     event: Event,
-    baseUrl: String?
+    baseUrl: String?,
+    onVerticalSwipe: ((Int) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val density = LocalDensity.current.density
     var videoAspectRatio by remember(event.camera, event.subdir) { mutableStateOf(16f / 9f) }
 
     val clipCandidateUrls = remember(event, baseUrl) {
@@ -338,25 +332,105 @@ private fun EventVideoSection(
 
     AndroidView(
         factory = {
-            PlayerView(context).apply {
+            EventVideoGestureFrameLayout(context, density).apply {
                 layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 )
-                setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT)
-                controllerShowTimeoutMs = 1000
-                this.player = player
+                val playerView = LayoutInflater.from(context).inflate(
+                    R.layout.event_detail_player_view,
+                    this,
+                    false
+                ) as PlayerView
+                playerView.layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT
+                )
+                addView(playerView)
             }
         },
-        update = { playerView ->
+        update = { container ->
+            val frame = container as EventVideoGestureFrameLayout
+            frame.onVerticalSwipe = onVerticalSwipe
+            val playerView = frame.getChildAt(0) as PlayerView
             playerView.player = player
             playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT)
+            playerView.controllerShowTimeoutMs = 1000
         },
         modifier = videoModifier,
-        onRelease = { playerView ->
-            playerView.player = null
+        onRelease = { container ->
+            val frame = container as EventVideoGestureFrameLayout
+            frame.onVerticalSwipe = null
+            (frame.getChildAt(0) as PlayerView).player = null
         }
     )
+}
+
+/**
+ * Sits above [PlayerView] in the view hierarchy and uses [onInterceptTouchEvent] so vertical drags
+ * are recognized even when the video surface would otherwise consume the stream before
+ * [View.setOnTouchListener] runs.
+ */
+private class EventVideoGestureFrameLayout(
+    context: android.content.Context,
+    private val density: Float
+) : FrameLayout(context) {
+
+    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+    private var downX = 0f
+    private var downY = 0f
+    private var intercepting = false
+
+    var onVerticalSwipe: ((Int) -> Unit)? = null
+
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+        if (onVerticalSwipe == null) return false
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downX = ev.x
+                downY = ev.y
+                intercepting = false
+                parent.requestDisallowInterceptTouchEvent(true)
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val dy = ev.y - downY
+                val dx = ev.x - downX
+                if (!intercepting && abs(dy) > touchSlop && abs(dy) > abs(dx) * 1.05f) {
+                    intercepting = true
+                    return true
+                }
+            }
+            MotionEvent.ACTION_CANCEL -> intercepting = false
+        }
+        return false
+    }
+
+    override fun onTouchEvent(ev: MotionEvent): Boolean {
+        val cb = onVerticalSwipe
+        if (cb == null) return super.onTouchEvent(ev)
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_MOVE -> if (intercepting) return true
+            MotionEvent.ACTION_UP -> {
+                if (intercepting) {
+                    val dy = ev.y - downY
+                    val dx = ev.x - downX
+                    intercepting = false
+                    val minPx = 48f * density
+                    if (abs(dy) >= minPx && abs(dy) > abs(dx) * 1.05f) {
+                        cb(if (dy < 0) 1 else -1)
+                    }
+                    return true
+                }
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                if (intercepting) {
+                    intercepting = false
+                    return true
+                }
+            }
+        }
+        return super.onTouchEvent(ev)
+    }
 }
 
 /**
@@ -409,8 +483,10 @@ private fun EventPlaceholderImage(
 private fun EventActionsSection(
     eventPath: String,
     saved: Boolean,
+    viewed: Boolean,
     isLoading: Boolean,
     onMarkReviewed: () -> Unit,
+    onUnmarkReviewed: () -> Unit,
     onKeep: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -432,16 +508,31 @@ private fun EventActionsSection(
         ) {
             Text("Delete", maxLines = 1)
         }
-        Button(
-            onClick = onMarkReviewed,
-            enabled = !isLoading,
-            modifier = Modifier.weight(1.4f).height(40.dp),
-            shape = actionShape,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary
-            )
-        ) {
-            Text("Mark Reviewed", maxLines = 1)
+        if (viewed) {
+            Button(
+                onClick = onUnmarkReviewed,
+                enabled = !isLoading,
+                modifier = Modifier.weight(1.4f).height(40.dp),
+                shape = actionShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            ) {
+                Text("Unmark reviewed", maxLines = 1)
+            }
+        } else {
+            Button(
+                onClick = onMarkReviewed,
+                enabled = !isLoading,
+                modifier = Modifier.weight(1.4f).height(40.dp),
+                shape = actionShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                )
+            ) {
+                Text("Mark Reviewed", maxLines = 1)
+            }
         }
         Button(
             onClick = onKeep,
@@ -500,21 +591,3 @@ private fun EventMetadataSection(event: Event) {
     }
 }
 
-private fun formatTimestamp(timestamp: String): String {
-    val seconds = timestamp.toLongOrNull() ?: 0L
-    val instant = Instant.ofEpochSecond(seconds)
-    val formatter = DateTimeFormatter.ofPattern("MMM d, yyyy h:mm a", Locale.getDefault())
-        .withZone(ZoneId.systemDefault())
-    return formatter.format(instant)
-}
-
-private fun formatCameraName(camera: String): String {
-    return camera
-        .replace('_', ' ')
-        .split(' ')
-        .joinToString(" ") { word ->
-            word.replaceFirstChar { c ->
-                if (c.isLowerCase()) c.uppercase() else c.toString()
-            }
-        }
-}

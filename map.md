@@ -23,7 +23,7 @@
   - **`MOBILE_API_CONTRACT.md`** — API contract for the Android client; all API usage must align with it.
   - **`BUFFER_FOLDER_STRUCTURE.md`** — Backend server folder and file layout (events/, saved/, daily_reports/), naming conventions, and how `/files/` paths map to storage; cross-reference when implementing or documenting file/media paths.
   - **`CODEBASE_ANALYSIS.md`** — Codebase analysis: file list with LOC, totals (with/without tests), test-coverage gaps, and refactoring/duplication notes. Update when doing large-scale analysis or when the structure changes significantly.
-- **`app/`** — Android application module (Gradle). All app source lives under `app/src/main/`.
+- **`app/`** — Android application module (Gradle). All app source lives under `app/src/main/`. The app module enables **`buildFeatures.buildConfig = true`** so `BuildConfig.DEBUG` is available (e.g. OkHttp log level in `ApiClient`).
 
 Do not add new root-level folders (e.g. `lib/`, `core/`) without explicit permission.
 
@@ -73,17 +73,18 @@ Gson is pulled in transitively by Retrofit (version in catalog: 2.10.1). Compose
 Package base: `com.example.frigateeventviewer`.
 
 ```
+app/src/main/res/layout/event_detail_player_view.xml   # Media3 PlayerView: texture_view surface (not default SurfaceView) for swipe gestures over video in EventDetailScreen AndroidView
 app/src/main/java/com/example/frigateeventviewer/
 ├── FrigateEventViewerApplication.kt   # Application: Coil ImageLoaderFactory (StreamingVideoFetcher); go2RtcStreamsRepository (shared go2rtc cache); "Security Alerts" notification channel
 ├── MainActivity.kt                    # Single Activity; Compose; on load triggers go2RtcStreamsRepository.refresh(); NavHost (settings, main_tabs, event_not_found, event_detail, snooze); handles deep link buffer://event_detail/{ce_id} via DeepLinkViewModel and EventMatching.findEventByCeId; activity-scoped ViewModels: Events, Live, DailyReview (SavedStateHandle for filter/camera/selected report date)
 ├── data/
 │   ├── Go2RtcStreamsRepository.kt    # Shared cache: go2rtc stream names (Go2RtcStreamsState); refresh() on app load and when Frigate IP saved; used by Settings and Live
 │   ├── api/
-│   │   ├── ApiClient.kt               # Retrofit/OkHttp factory; createService(baseUrl)
-│   │   └── FrigateApiService.kt       # Retrofit: getEvents, getCameras, getStats, getStatus, getCurrentDailyReview, getDailyReviewDates, getDailyReviewByDate, generateDailyReview (optional date query), markViewed, keepEvent, deleteEvent, registerDevice, getSnoozeList, setSnooze, clearSnooze, getUnreadCount, getGo2RtcStreams
+│   │   ├── ApiClient.kt               # Retrofit/OkHttp factory; createService(baseUrl); connect/read/write/call timeouts; HttpLoggingInterceptor BODY in debug, NONE in release
+│   │   └── FrigateApiService.kt       # Retrofit: getEvents, getEventsByCamera, getCameras, getStats, getStatus, getCurrentDailyReview, getDailyReviewDates, getDailyReviewByDate, generateDailyReview (optional date query), markViewed, unmarkViewed, markAllViewed, keepEvent, deleteEvent, registerDevice, getSnoozeList, setSnooze, clearSnooze, getUnreadCount, getGo2RtcStreams
 │   ├── model/                         # DTOs for API responses (Event, EventsResponse, StatsResponse, CamerasResponse, SnoozeRequest, SnoozeResponse, SnoozeEntry, UnreadCountResponse, DailyReviewResponse, DailyReviewDatesResponse, etc.)
 │   ├── preferences/
-│   │   └── SettingsPreferences.kt     # DataStore: baseUrl, frigateIp, buildFrigateApiBaseUrl (5000); defaultLiveCamera
+│   │   └── SettingsPreferences.kt     # DataStore: baseUrl, frigateIp, buildFrigateApiBaseUrl (5000); defaultLiveCamera; showEventsCameraFilter (default false)
 │   ├── push/
 │   │       ├── PushConstants.kt           # CHANNEL_ID_SECURITY_ALERTS; notificationId(ce_id) for deterministic slotting; used by Application and FrigateFirebaseMessagingService
 │   │       ├── UnreadState.kt             # Single source of truth: last server unread count + locally marked reviewed IDs; badge and Events list both read from it
@@ -100,14 +101,14 @@ app/src/main/java/com/example/frigateeventviewer/
     │   ├── DashboardScreen.kt         # Dashboard UI + DashboardViewModel/Factory; 5m refresh throttle
     │   ├── DailyReviewScreen.kt       # Daily review: date dropdown (GET /api/daily-review/dates + by-day report), defaults to today or most recent report; Markdown + in-progress badge for today; empty/generate; DailyReviewViewModel activity-scoped (SavedStateHandle selected date); 5m refresh throttle
     │   ├── DeepLinkViewModel.kt       # Pending deep-link ce_id and resolve trigger; used by MainActivity for buffer://event_detail/{ce_id}
-    │   ├── EventDetailScreen.kt       # Event detail: video (Media3) or snapshot placeholder when no clip; actions, metadata + EventDetailViewModel/Factory
+    │   ├── EventDetailScreen.kt       # Event detail: video (Media3) or snapshot placeholder when no clip; Mark Reviewed vs Unmark reviewed when event.viewed; prev/next + vertical swipe (PlayerView inflated from res/layout with texture_view; EventVideoGestureFrameLayout onInterceptTouchEvent + requestDisallowInterceptTouchEvent on DOWN; SwipeBack disabled here); actions, metadata + EventDetailViewModel/Factory
     │   ├── EventNotFoundScreen.kt     # Shown when deep link cannot resolve to an event; Refresh retries resolution
-    │   ├── EventsScreen.kt            # Events list: three modes (Reviewed/Unreviewed/Saved), full-width dropdown; dynamic title; event cards show two-line GenAI title (fallback camera), 12h time, threat-level card tint (0 default, 1 yellow, 2 red); filters by UnreadState.locallyMarkedReviewedEventIds for Unreviewed; EventsViewModel activity-scoped (MainActivity), filter mode in Activity SavedStateHandle via CreationExtras; LazyColumn uses stable key (event_id) and EventCardItem display model for list performance; 5m refresh throttle; watchdog prunes UnreadState
+    │   ├── EventsScreen.kt            # Events list: three modes (Reviewed/Unreviewed/Saved), full-width dropdown; optional camera filter UI when Settings showEventsCameraFilter is on (default off; All or per-camera via GET /events/&lt;camera&gt;; camera names from GET /cameras merged with event data, reserved segments like "events" excluded); Mark all reviewed (Unreviewed); dynamic title; event cards show two-line GenAI title (fallback camera), 12h time, threat-level card tint (0 default, 1 yellow, 2 red); filters by UnreadState.locallyMarkedReviewedEventIds for Unreviewed; EventsViewModel activity-scoped (MainActivity), filter + camera in SavedStateHandle via CreationExtras; LazyColumn uses stable key (event_id) and EventCardItem display model for list performance; 5m refresh throttle; watchdog prunes UnreadState
 │   ├── LiveScreen.kt              # Live tab: Select Camera dropdown from shared Go2RtcStreamsRepository state, preselects default from Settings when in list; live video player (stream URL: api/go2rtc/api/stream.mp4 via Frigate proxy 5000 only; original aspect ratio, fillMaxWidth, 12.dp; ExoPlayer with low-latency LoadControl and VIDEO_SCALING_MODE_SCALE_TO_FIT; Connecting/Loading status; error below player shows exact reason e.g. HTTP 404); LiveViewModel/Factory (activity-scoped, created in MainActivity, passed via MainTabsScreen)
-│   ├── MainTabsScreen.kt          # HorizontalPager + bottom navigation hosting Live/Dashboard/Events/DailyReview; header title from tab; Snooze (Dashboard only) + Settings; tab index from MainTabsViewModel (SavedStateHandle) for rotation; default tab Dashboard (index 1); landscape: bottom bar hidden by default, AnimatedVisibility (expand/shrink) for show/hide; floating drag handle (circle+chevron, zIndex+offset) when bar closed; handle inside bottomBar Column above NavigationBar when bar open (transparent strip); alpha from SettingsPreferences
+│   ├── MainTabsScreen.kt          # HorizontalPager + bottom navigation hosting Live/Dashboard/Events/DailyReview; LaunchedEffect(selectedTabIndex) syncs pager when tab changes programmatically; header title from settledPage (no mid-swipe flicker); Snooze (Dashboard only) + Settings; tab index from MainTabsViewModel (SavedStateHandle) for rotation; default tab Dashboard (index 1); landscape: bottom bar hidden by default, AnimatedVisibility (expand/shrink) for show/hide; floating drag handle (circle+chevron, zIndex+offset) when bar closed; handle inside bottomBar Column above NavigationBar when bar open (transparent strip); alpha from SettingsPreferences
     │   ├── MainTabsViewModel.kt       # Activity-scoped: selectedTabIndex in SavedStateHandle so main-tabs page survives configuration change
-    │   ├── SharedEventViewModel.kt    # Activity-scoped: selectedEvent for event_detail; requestEventsRefresh(markedReviewedEventId?, deletedEventId?) for events list + local designation
-    │   ├── SettingsScreen.kt          # Server URL + Frigate IP + Default camera (Live tab) dropdown from go2rtc streams; SettingsViewModel/Factory
+    │   ├── SharedEventViewModel.kt    # Activity-scoped: selectedEvent for event_detail; requestEventsRefresh(markedReviewedEventId?, deletedEventId?) for events list + local designation; SharedFlow extraBufferCapacity so refresh signals are not dropped
+    │   ├── SettingsScreen.kt          # Server URL + Frigate IP + Default camera (Live tab) dropdown from go2rtc streams + Switch for Events camera filter (showEventsCameraFilter); SettingsViewModel/Factory
     │   ├── SnoozeScreen.kt            # Per-camera snooze: presets 30m/1h/2h, AI vs Notification toggles, camera list with Snooze/Clear
     │   └── SnoozeViewModel.kt         # SnoozeViewModel/Factory: getCameras, getSnoozeList, setSnooze, clearSnooze
     ├── theme/
@@ -117,6 +118,7 @@ app/src/main/java/com/example/frigateeventviewer/
     └── util/
         ├── EventMediaPath.kt          # Candidate paths for event thumbnails/clips: primary (API path) + fallback (subdir/event_id swap for single-camera, ce_ prefix for consolidated); used by EventsScreen, EventDetailScreen, DashboardScreen
         ├── MediaUrl.kt                # buildMediaUrl(baseUrl, path) for thumbnails/snapshots
+        ├── FormatHelpers.kt           # parseTimestampToEpochSeconds, formatTimestamp, formatCameraName (fractional API timestamps)
         ├── StreamingVideoFetcher.kt  # Coil Fetcher for .mp4 URIs; streams via MediaMetadataRetriever, frame at 2s
         └── SwipeBack.kt               # SwipeBackBox: full-width swipe-back on nested screens (rightward swipe from anywhere; vertical scroll preserved)
 ```
@@ -165,7 +167,7 @@ app/src/main/java/com/example/frigateeventviewer/
    - CLIP_READY notifications include "Mark Reviewed" and "Keep" buttons. Taps are handled by `NotificationActionReceiver` (registered with `android:exported="false"`). Event path is reconstructed as `events/{ce_id}`. Mark Reviewed calls POST /viewed and cancels the notification; Keep calls POST /keep and updates the same notification to "Saved". Toasts give feedback; on API failure a Toast shows the error.
 
 9. **AndroidManifest**
-   - `android:usesCleartextTraffic="true"` on `<application>` for local HTTP backends. FCM service is declared with `com.google.firebase.MESSAGING_EVENT` so FCM can deliver messages and invoke `onNewToken`.
+   - `android:usesCleartextTraffic="true"` on `<application>` for local HTTP backends. `MainActivity` uses `android:launchMode="singleTop"` so deep links and notification taps reuse the existing activity (`onNewIntent`) when possible. FCM service is declared with `com.google.firebase.MESSAGING_EVENT` so FCM can deliver messages and invoke `onNewToken`.
 
 10. **Presence and badge**
    - The app icon badge (unreviewed-events count) and the events list share a single source of truth: [UnreadState](app/src/main/java/com/example/frigateeventviewer/data/push/UnreadState.kt) (last server unread count + locally marked reviewed event IDs). [UnreadBadgeHelper](app/src/main/java/com/example/frigateeventviewer/data/push/UnreadBadgeHelper.kt) fetches GET /api/events/unread_count on MainActivity `onResume()`, records the count in UnreadState, and applies the silent badge notification (channel [PushConstants.CHANNEL_ID_BADGE](app/src/main/java/com/example/frigateeventviewer/data/push/PushConstants.kt)); when the user marks an event as reviewed or deletes it (in-app or via notification action), callers record in UnreadState and call `UnreadBadgeHelper.applyBadge(context, UnreadState.currentEffectiveUnreadCount())` so the badge updates immediately without waiting for the next resume.
@@ -221,7 +223,7 @@ The script (`run-pre-commit.ps1` in the project root) changes to the project dir
 - **ktlintFormat** — Formats all Kotlin source (fixes style; no separate per-module step).
 - **ktlintCheck** — Fails the build if any ktlint rule is still violated (e.g. unused imports). Run after format so only unfixable or remaining violations fail.
 - **compileDebugKotlin** — Compiles main Kotlin code; fails on compile errors (unresolved reference, type inference, etc.) before tests run.
-- **test** — Runs **all** unit tests in `app/src/test/`. Gradle discovers every test class there; there is no separate list. Current unit test classes: `EventNotificationTest`, `SharedEventViewModelTest`, `ExampleUnitTest`, `EventDetailViewModelTest`, `MediaUrlTest`.
+- **test** — Runs **all** unit tests in `app/src/test/`. Gradle discovers every test class there; there is no separate list. Current unit test classes: `EventNotificationTest`, `SharedEventViewModelTest`, `ExampleUnitTest`, `EventDetailViewModelTest`, `MediaUrlTest`, `FormatHelpersTest`.
 
 Instrumented tests in `app/src/androidTest/` are **not** run by this script (they require a device or emulator). Run them with `.\gradlew connectedDebugAndroidTest` when needed.
 

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -14,7 +15,7 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 
 /**
  * DataStore-backed preferences for app settings (e.g. server Base URL, Frigate IP).
- * Exposes flows and suspend functions to read/save base URL, Frigate IP, and default Live camera.
+ * Exposes flows and suspend functions to read/save base URL, Frigate IP, default Live camera, and Events camera filter visibility.
  */
 class SettingsPreferences(private val context: Context) {
 
@@ -102,10 +103,27 @@ class SettingsPreferences(private val context: Context) {
     suspend fun getDefaultLiveCameraOnce(): String? =
         dataStore.data.map { prefs -> prefs[DEFAULT_LIVE_CAMERA_KEY]?.takeIf { it.isNotBlank() } }.first()
 
+    /**
+     * When true, the Events tab shows the per-camera filter dropdown (default off).
+     */
+    val showEventsCameraFilter: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[SHOW_EVENTS_CAMERA_FILTER_KEY] ?: false
+    }
+
+    suspend fun saveShowEventsCameraFilter(show: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[SHOW_EVENTS_CAMERA_FILTER_KEY] = show
+        }
+    }
+
+    suspend fun getShowEventsCameraFilterOnce(): Boolean =
+        dataStore.data.map { prefs -> prefs[SHOW_EVENTS_CAMERA_FILTER_KEY] ?: false }.first()
+
     companion object {
         private val BASE_URL_KEY = stringPreferencesKey("server_base_url")
         private val FRIGATE_IP_KEY = stringPreferencesKey("frigate_ip")
         private val DEFAULT_LIVE_CAMERA_KEY = stringPreferencesKey("default_live_camera")
+        private val SHOW_EVENTS_CAMERA_FILTER_KEY = booleanPreferencesKey("show_events_camera_filter")
 
         /**
          * Builds the Frigate API base URL from the stored Frigate IP.

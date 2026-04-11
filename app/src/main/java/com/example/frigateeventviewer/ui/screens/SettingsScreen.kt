@@ -5,6 +5,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -30,6 +31,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -84,7 +86,7 @@ private fun DefaultCameraDropdown(
             trailingIcon = {
                 Icon(
                     imageVector = Icons.Default.ArrowDropDown,
-                    contentDescription = null,
+                    contentDescription = "Default Live camera: $label",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             },
@@ -150,6 +152,7 @@ fun SettingsScreen(
     val connectionTestState by viewModel.connectionTestState.collectAsState()
     val defaultCameraListState by viewModel.defaultCameraListState.collectAsState()
     val defaultCameraSelection by viewModel.defaultCameraSelection.collectAsState()
+    val showEventsCameraFilter by viewModel.showEventsCameraFilter.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(connectionTestState) {
@@ -240,6 +243,28 @@ fun SettingsScreen(
             onSelectionChange = viewModel::setDefaultCameraSelection,
             enabled = connectionTestState !is ConnectionTestState.Loading
         )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Events camera filter",
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Text(
+                    text = "Show a second dropdown on the Events tab to filter by camera (GET /cameras). Off by default.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(
+                checked = showEventsCameraFilter,
+                onCheckedChange = viewModel::setShowEventsCameraFilter,
+                enabled = connectionTestState !is ConnectionTestState.Loading
+            )
+        }
         Button(
             onClick = {
                 viewModel.saveBaseUrl(onSaved = onNavigateToDashboard)

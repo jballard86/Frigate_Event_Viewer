@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.width
@@ -23,6 +24,8 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -58,10 +61,8 @@ import coil.request.ImageRequest
 import com.example.frigateeventviewer.data.model.Event
 import com.example.frigateeventviewer.ui.util.EventMediaPath
 import com.example.frigateeventviewer.ui.util.buildMediaUrl
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
+import com.example.frigateeventviewer.ui.util.formatCameraName
+import com.example.frigateeventviewer.ui.util.formatTimestamp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -82,8 +83,21 @@ fun EventsScreen(
     }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var dropdownExpanded by remember { mutableStateOf(false) }
+    var cameraDropdownExpanded by remember { mutableStateOf(false) }
     var dropdownWidthDp by remember { mutableStateOf(0.dp) }
+    var cameraDropdownWidthDp by remember { mutableStateOf(0.dp) }
     val density = LocalDensity.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val cameraFilter by viewModel.cameraFilter.collectAsState()
+    val cameraNamesForFilter by viewModel.cameraNamesForFilter.collectAsState()
+    val showEventsCameraFilter by viewModel.showEventsCameraFilter.collectAsState()
+    val markAllViewedError by viewModel.markAllViewedError.collectAsState()
+
+    LaunchedEffect(markAllViewedError) {
+        val msg = markAllViewedError ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(msg)
+        viewModel.clearMarkAllViewedError()
+    }
 
     LaunchedEffect(lifecycle, currentPage, pageIndex) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
@@ -106,6 +120,7 @@ fun EventsScreen(
     val showErrorState = state is EventsState.Error && previousResponse == null
     val showErrorBanner = state is EventsState.Error && previousResponse != null
 
+    Box(modifier = Modifier.fillMaxSize()) {
     PullToRefreshBox(
         isRefreshing = isLoading,
         onRefresh = { viewModel.refresh(force = true) },
@@ -135,7 +150,7 @@ fun EventsScreen(
                     trailingIcon = {
                         Icon(
                             imageVector = Icons.Default.ArrowDropDown,
-                            contentDescription = null,
+                            contentDescription = "Filter events: $dropdownLabel",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },
@@ -183,6 +198,85 @@ fun EventsScreen(
                             dropdownExpanded = false
                         }
                     )
+                }
+            }
+            if (showEventsCameraFilter) {
+                val cameraTriggerLabel = cameraFilter ?: "All cameras"
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .padding(bottom = 8.dp)
+                        .onGloballyPositioned { coordinates ->
+                            cameraDropdownWidthDp = with(density) { coordinates.size.width.toDp() }
+                        }
+                ) {
+                    OutlinedTextField(
+                        value = cameraTriggerLabel,
+                        onValueChange = {},
+                        readOnly = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(64.dp),
+                        trailingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.ArrowDropDown,
+                                contentDescription = "Filter by camera: $cameraTriggerLabel",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.outline,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                            focusedTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unfocusedTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(64.dp)
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) { cameraDropdownExpanded = true }
+                    )
+                    DropdownMenu(
+                        expanded = cameraDropdownExpanded,
+                        onDismissRequest = { cameraDropdownExpanded = false },
+                        modifier = if (cameraDropdownWidthDp > 0.dp) Modifier.width(cameraDropdownWidthDp) else Modifier,
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("All cameras") },
+                            onClick = {
+                                viewModel.setCameraFilter(null)
+                                cameraDropdownExpanded = false
+                            }
+                        )
+                        cameraNamesForFilter.forEach { name ->
+                            DropdownMenuItem(
+                                text = { Text(name) },
+                                onClick = {
+                                    viewModel.setCameraFilter(name)
+                                    cameraDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+            if (filterMode == EventsFilterMode.Unreviewed && showList) {
+                Button(
+                    onClick = { viewModel.markAllViewed() },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(40.dp)
+                        .padding(bottom = 8.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Mark all reviewed", maxLines = 1)
                 }
             }
             if (showFullScreenSpinner) {
@@ -278,6 +372,11 @@ fun EventsScreen(
             }
         }
     }
+    SnackbarHost(
+        hostState = snackbarHostState,
+        modifier = Modifier.align(Alignment.BottomCenter)
+    )
+    }
 }
 
 /**
@@ -358,9 +457,8 @@ private fun EventCard(
                     .clip(RoundedCornerShape(8.dp))
                     .background(MaterialTheme.colorScheme.surface)
             ) {
-                if (candidateUrls.isNotEmpty() && currentUrlIndex < candidateUrls.size) {
-                    val showPlaceholder = currentUrlIndex >= candidateUrls.size
-                    if (showPlaceholder) {
+                when {
+                    candidateUrls.isEmpty() -> {
                         Icon(
                             imageVector = Icons.Default.Warning,
                             contentDescription = "No preview",
@@ -369,18 +467,29 @@ private fun EventCard(
                                 .padding(8.dp),
                             tint = MaterialTheme.colorScheme.outline
                         )
-                    } else {
+                    }
+                    currentUrlIndex >= candidateUrls.size -> {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "No preview",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(8.dp),
+                            tint = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                    else -> {
                         AsyncImage(
                             model = imageRequest!!,
                             contentDescription = "Event snapshot",
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop,
-                            onState = { state ->
-                                if (state is AsyncImagePainter.State.Error) {
+                            onState = { imgState ->
+                                if (imgState is AsyncImagePainter.State.Error) {
                                     Log.e(
                                         "CoilError",
-                                        "Thumbnail failed: ${state.result.throwable.message}",
-                                        state.result.throwable
+                                        "Thumbnail failed: ${imgState.result.throwable.message}",
+                                        imgState.result.throwable
                                     )
                                     if (currentUrlIndex + 1 < candidateUrls.size) {
                                         currentUrlIndex += 1
@@ -391,15 +500,6 @@ private fun EventCard(
                             }
                         )
                     }
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = "No preview",
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(8.dp),
-                        tint = MaterialTheme.colorScheme.outline
-                    )
                 }
             }
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -416,29 +516,4 @@ private fun EventCard(
             }
         }
     }
-}
-
-/**
- * Formats Unix timestamp string to readable date/time using java.time (12-hour format).
- */
-private fun formatTimestamp(timestamp: String): String {
-    val seconds = timestamp.toLongOrNull() ?: 0L
-    val instant = Instant.ofEpochSecond(seconds)
-    val formatter = DateTimeFormatter.ofPattern("MMM d, yyyy h:mm a", Locale.getDefault())
-        .withZone(ZoneId.systemDefault())
-    return formatter.format(instant)
-}
-
-/**
- * Formats camera name for display (e.g. "front_door" -> "Front door").
- */
-private fun formatCameraName(camera: String): String {
-    return camera
-        .replace('_', ' ')
-        .split(' ')
-        .joinToString(" ") { word ->
-            word.replaceFirstChar { c ->
-                if (c.isLowerCase()) c.uppercase() else c.toString()
-            }
-        }
 }

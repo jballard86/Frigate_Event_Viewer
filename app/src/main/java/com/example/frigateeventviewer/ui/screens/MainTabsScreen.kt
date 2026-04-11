@@ -75,6 +75,11 @@ fun MainTabsScreen(
         initialPage = selectedTabIndex,
         pageCount = { 4 }
     )
+    LaunchedEffect(selectedTabIndex) {
+        if (selectedTabIndex != pagerState.currentPage) {
+            pagerState.animateScrollToPage(selectedTabIndex)
+        }
+    }
     LaunchedEffect(pagerState.settledPage) {
         mainTabsViewModel.setSelectedTabIndex(pagerState.settledPage)
     }
@@ -96,7 +101,8 @@ fun MainTabsScreen(
         modifier = Modifier.fillMaxSize(),
         topBar = {
             val eventsPageTitle by eventsViewModel.eventsPageTitle.collectAsState()
-            val pageTitle = when (pagerState.currentPage) {
+            val settledTab = pagerState.settledPage
+            val pageTitle = when (settledTab) {
                 0 -> "Live"
                 1 -> "Dashboard"
                 2 -> eventsPageTitle
@@ -115,7 +121,7 @@ fun MainTabsScreen(
                     style = MaterialTheme.typography.headlineLarge
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
-                    if (pagerState.currentPage == 1) {
+                    if (settledTab == 1) {
                         IconButton(
                             onClick = { navController.navigate("snooze") }
                         ) {

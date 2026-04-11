@@ -233,6 +233,11 @@ class MainActivity : ComponentActivity() {
                             sharedEventViewModel.selectEvent(null)
                             navController.popBackStack()
                         }
+                        val selectedId = selectedEvent?.event_id
+                        val canNavigatePrevious = selectedId != null &&
+                            eventsViewModel.getEventAtOffset(selectedId, -1) != null
+                        val canNavigateNext = selectedId != null &&
+                            eventsViewModel.getEventAtOffset(selectedId, 1) != null
                         EventDetailScreen(
                             selectedEvent = selectedEvent,
                             eventListLabel = eventListLabel,
@@ -241,10 +246,37 @@ class MainActivity : ComponentActivity() {
                                 navController.popBackStack()
                             },
                             onCycleEvent = { direction ->
-                                val currentId = selectedEvent?.event_id ?: return@EventDetailScreen
-                                eventsViewModel.getEventAtOffset(currentId, direction)?.let {
-                                    sharedEventViewModel.selectEvent(it)
+                                selectedEvent?.event_id?.let { currentId ->
+                                    eventsViewModel.getEventAtOffset(currentId, direction)?.let {
+                                        sharedEventViewModel.selectEvent(it)
+                                    }
                                 }
+                            },
+                            canNavigatePrevious = canNavigatePrevious,
+                            canNavigateNext = canNavigateNext,
+                            onCyclePrevious = {
+                                selectedId?.let { id ->
+                                    eventsViewModel.getEventAtOffset(id, -1)?.let {
+                                        sharedEventViewModel.selectEvent(it)
+                                    }
+                                }
+                            },
+                            onCycleNext = {
+                                selectedId?.let { id ->
+                                    eventsViewModel.getEventAtOffset(id, 1)?.let {
+                                        sharedEventViewModel.selectEvent(it)
+                                    }
+                                }
+                            },
+                            onUnmarkCompleted = {
+                                lifecycleScope.launch {
+                                    selectedEvent?.event_id?.let { id ->
+                                        UnreadState.removeLocalMarkedReviewedIfPresent(id)
+                                    }
+                                }
+                                UnreadBadgeHelper.updateFromServer(applicationContext)
+                                sharedEventViewModel.requestEventsRefresh()
+                                eventsViewModel.refresh(force = true)
                             },
                             onEventActionCompleted = { markedReviewedEventId: String?, deletedEventId: String?, advanceFromCurrent: Boolean ->
                                 if (markedReviewedEventId != null) {
