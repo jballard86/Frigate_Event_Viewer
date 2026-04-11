@@ -16,6 +16,7 @@ import com.example.frigateeventviewer.data.push.UnreadBadgeHelper
 import com.example.frigateeventviewer.data.push.UnreadState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -25,7 +26,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 
 /**
  * Filter mode for the Events tab. Single source of truth for the API filter param (never null).
@@ -47,6 +47,17 @@ sealed class EventsState {
 }
 
 /**
+ * Result of a swipe-to-mark-reviewed action for UI feedback (Snackbar + optional undo).
+ */
+sealed class SwipeMarkReviewedResult {
+    /** Server marked viewed; caller may show Snackbar with Undo. */
+    data object SuccessWithUndo : SwipeMarkReviewedResult()
+
+    /** Optimistic update was reverted; show error Snackbar. */
+    data class Failure(val message: String) : SwipeMarkReviewedResult()
+}
+
+/**
  * ViewModel for the Events screen.
  * Loads events by filter mode (reviewed / unreviewed / saved); exposes baseUrl, page title, and dropdown selection label.
  * Keeps previous list on screen while refreshing. Subscribes to [SharedEventViewModel.eventsRefreshRequested].
@@ -61,6 +72,8 @@ class EventsViewModel(
     private val preferences = SettingsPreferences(application)
     private val loadMutex = Mutex()
     private var loadJob: Job? = null
+    /** When true, [runLoadEvents] will run again after the current load finishes (coalesced refresh). */
+    private var pendingLoadEvents = false
     private var lastFetchTime = 0L
 
     /** Current filter mode; restored from [SavedStateHandle] on init, default Unreviewed. */
@@ -92,9 +105,16 @@ class EventsViewModel(
     private val _state = MutableStateFlow<EventsState>(EventsState.Loading(null))
     val state: StateFlow<EventsState> = _state.asStateFlow()
 
-    /** Events to display: for Unreviewed, server list minus [UnreadState] locally marked reviewed; for Reviewed/Saved, server list. */
+    /** Events to display: server list minus locally marked reviewed (Unreviewed) and locally kept IDs (all modes). */
     private val _displayedEvents = MutableStateFlow<List<Event>>(emptyList())
     val displayedEvents: StateFlow<List<Event>> = _displayedEvents.asStateFlow()
+
+    /**
+     * IDs of events the user has swiped-to-keep in this session. Filtered out of [_displayedEvents]
+     * so the row disappears immediately, even if the server response hasn't refreshed yet.
+     * Cleared on each successful [runLoadEvents] because the server list no longer contains them.
+     */
+    private val locallyKeptEventIds = mutableSetOf<String>()
 
     /** Label for the filter dropdown trigger: "Unreviewed", "Reviewed", or "Saved". */
     private val _dropdownSelectionLabel = MutableStateFlow(dropdownLabelForMode(_filterMode.value))
@@ -171,10 +191,13 @@ class EventsViewModel(
         }
         val events = response?.events ?: emptyList()
         val localSet = UnreadState.locallyMarkedReviewedEventIds.value
+        val keptSet = synchronized(locallyKeptEventIds) { locallyKeptEventIds.toSet() }
         val filtered = withContext(Dispatchers.Default) {
             when (_filterMode.value) {
-                EventsFilterMode.Unreviewed -> events.filter { it.event_id !in localSet }
-                EventsFilterMode.Reviewed, EventsFilterMode.Saved -> events
+                EventsFilterMode.Unreviewed ->
+                    events.filter { it.event_id !in localSet && it.event_id !in keptSet }
+                EventsFilterMode.Reviewed, EventsFilterMode.Saved ->
+                    events.filter { it.event_id !in keptSet }
             }
         }
         _displayedEvents.value = filtered
@@ -207,6 +230,117 @@ class EventsViewModel(
 
     fun clearMarkAllViewedError() {
         _markAllViewedError.value = null
+    }
+
+    /**
+     * Builds the API path for mark/keep/delete (same as EventDetailScreen: [camera]/[subdir]).
+     */
+    private fun eventPath(event: Event): String = "${event.camera}/${event.subdir}"
+
+    /**
+     * Swipe right → Mark reviewed: optimistic [UnreadState], POST /viewed, refresh unread badge and list.
+     * On API failure, reverts local state so the row reappears.
+     */
+    fun swipeMarkReviewed(event: Event, onResult: (SwipeMarkReviewedResult) -> Unit) {
+        viewModelScope.launch {
+            val baseUrlValue = preferences.getBaseUrlOnce()
+            if (baseUrlValue == null) {
+                onResult(SwipeMarkReviewedResult.Failure("No server URL"))
+                return@launch
+            }
+            try {
+                UnreadState.recordMarkedReviewed(event.event_id)
+                updateDisplayedEvents()
+                withContext(Dispatchers.Main) {
+                    UnreadBadgeHelper.applyBadge(
+                        getApplication(),
+                        UnreadState.currentEffectiveUnreadCount(),
+                    )
+                }
+                val service = ApiClient.createService(baseUrlValue)
+                service.markViewed(eventPath(event))
+                val unread = service.getUnreadCount()
+                UnreadState.recordFetchedUnreadCount(unread.unread_count)
+                withContext(Dispatchers.Main) {
+                    UnreadBadgeHelper.applyBadge(
+                        getApplication(),
+                        UnreadState.currentEffectiveUnreadCount(),
+                    )
+                }
+                loadEvents()
+                onResult(SwipeMarkReviewedResult.SuccessWithUndo)
+            } catch (e: Exception) {
+                UnreadState.removeLocalMarkedReviewedIfPresent(event.event_id)
+                updateDisplayedEvents()
+                withContext(Dispatchers.Main) {
+                    UnreadBadgeHelper.applyBadge(
+                        getApplication(),
+                        UnreadState.currentEffectiveUnreadCount(),
+                    )
+                }
+                onResult(SwipeMarkReviewedResult.Failure(e.message ?: "Failed to mark reviewed"))
+            }
+        }
+    }
+
+    /**
+     * Undo after swipe mark reviewed: DELETE /viewed, clear local mark, refresh badge and list.
+     */
+    fun undoMarkReviewed(event: Event, onComplete: (Result<Unit>) -> Unit) {
+        viewModelScope.launch {
+            val baseUrlValue = preferences.getBaseUrlOnce()
+            if (baseUrlValue == null) {
+                onComplete(Result.failure(IllegalStateException("No server URL")))
+                return@launch
+            }
+            try {
+                val service = ApiClient.createService(baseUrlValue)
+                service.unmarkViewed(eventPath(event))
+                UnreadState.removeLocalMarkedReviewedIfPresent(event.event_id)
+                updateDisplayedEvents()
+                withContext(Dispatchers.Main) {
+                    UnreadBadgeHelper.applyBadge(
+                        getApplication(),
+                        UnreadState.currentEffectiveUnreadCount(),
+                    )
+                }
+                val unread = service.getUnreadCount()
+                UnreadState.recordFetchedUnreadCount(unread.unread_count)
+                withContext(Dispatchers.Main) {
+                    UnreadBadgeHelper.applyBadge(
+                        getApplication(),
+                        UnreadState.currentEffectiveUnreadCount(),
+                    )
+                }
+                loadEvents()
+                onComplete(Result.success(Unit))
+            } catch (e: Exception) {
+                onComplete(Result.failure(e))
+            }
+        }
+    }
+
+    /**
+     * Swipe left → Keep: POST /keep, hide row immediately via [locallyKeptEventIds],
+     * then refresh list (event moves under saved/). A background load may be in flight; [loadEvents] queues.
+     */
+    fun swipeKeepEvent(event: Event, onComplete: (Result<Unit>) -> Unit) {
+        viewModelScope.launch {
+            val baseUrlValue = preferences.getBaseUrlOnce()
+            if (baseUrlValue == null) {
+                onComplete(Result.failure(IllegalStateException("No server URL")))
+                return@launch
+            }
+            try {
+                ApiClient.createService(baseUrlValue).keepEvent(eventPath(event))
+                synchronized(locallyKeptEventIds) { locallyKeptEventIds.add(event.event_id) }
+                updateDisplayedEvents()
+                loadEvents()
+                onComplete(Result.success(Unit))
+            } catch (e: Exception) {
+                onComplete(Result.failure(e))
+            }
+        }
     }
 
     /**
@@ -275,9 +409,23 @@ class EventsViewModel(
     private fun loadEvents() {
         viewModelScope.launch {
             loadMutex.withLock {
-                if (loadJob?.isActive == true) return@launch
+                if (loadJob?.isActive == true) {
+                    pendingLoadEvents = true
+                    return@launch
+                }
                 loadJob = launch {
-                    runLoadEvents()
+                    do {
+                        pendingLoadEvents = false
+                        runLoadEvents()
+                        val runAgain = loadMutex.withLock {
+                            if (pendingLoadEvents) {
+                                pendingLoadEvents = false
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                    } while (runAgain)
                 }
             }
         }
@@ -320,6 +468,7 @@ class EventsViewModel(
                 emptyList()
             }
             _cameraNamesForFilter.value = mergeCameraNamesAfterLoad(response, serverCameraNames)
+            synchronized(locallyKeptEventIds) { locallyKeptEventIds.clear() }
             _state.value = EventsState.Success(response)
             updateDisplayedEvents()
             lastFetchTime = System.currentTimeMillis()

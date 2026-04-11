@@ -1,6 +1,7 @@
 package com.example.frigateeventviewer.ui.screens
 
 import android.util.Log
+import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -14,44 +15,60 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -88,6 +105,7 @@ fun EventsScreen(
     var cameraDropdownWidthDp by remember { mutableStateOf(0.dp) }
     val density = LocalDensity.current
     val snackbarHostState = remember { SnackbarHostState() }
+    val swipeCoroutineScope = rememberCoroutineScope()
     val cameraFilter by viewModel.cameraFilter.collectAsState()
     val cameraNamesForFilter by viewModel.cameraNamesForFilter.collectAsState()
     val showEventsCameraFilter by viewModel.showEventsCameraFilter.collectAsState()
@@ -352,11 +370,14 @@ fun EventsScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(displayEvents, key = { it.event_id }) { event ->
-                        val item = eventToCardItem(event)
-                        EventCard(
-                            item = item,
+                        SwipeableEventRow(
+                            event = event,
+                            filterMode = filterMode,
+                            viewModel = viewModel,
+                            snackbarHostState = snackbarHostState,
+                            coroutineScope = swipeCoroutineScope,
                             baseUrl = baseUrl,
-                            onClick = { onEventClick(event) }
+                            onEventClick = onEventClick
                         )
                     }
                 }
@@ -376,6 +397,219 @@ fun EventsScreen(
         hostState = snackbarHostState,
         modifier = Modifier.align(Alignment.BottomCenter)
     )
+    }
+}
+
+/**
+ * Wraps [EventCard] with swipe gestures: start→end = Mark reviewed (Unreviewed only), end→start = Keep
+ * when allowed by [filterMode] and [Event.saved]. Haptic at half-dismiss; Snackbar + Undo for mark reviewed.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeableEventRow(
+    event: Event,
+    filterMode: EventsFilterMode,
+    viewModel: EventsViewModel,
+    snackbarHostState: SnackbarHostState,
+    coroutineScope: CoroutineScope,
+    baseUrl: String?,
+    onEventClick: (Event) -> Unit
+) {
+    val isSaved = event.saved == true
+    val canSwipeMarkReviewed =
+        filterMode == EventsFilterMode.Unreviewed && !isSaved
+    val canSwipeKeep =
+        (filterMode == EventsFilterMode.Unreviewed || filterMode == EventsFilterMode.Reviewed) && !isSaved
+    val enableStartToEnd = canSwipeMarkReviewed
+    val enableEndToStart = canSwipeKeep
+
+    // Per-event key so LazyColumn slots do not reuse a stuck EndToStart dismiss state (pink background).
+    key(event.event_id) {
+        SwipeableEventRowContent(
+            event = event,
+            filterMode = filterMode,
+            viewModel = viewModel,
+            snackbarHostState = snackbarHostState,
+            coroutineScope = coroutineScope,
+            baseUrl = baseUrl,
+            onEventClick = onEventClick,
+            isSaved = isSaved,
+            canSwipeMarkReviewed = canSwipeMarkReviewed,
+            canSwipeKeep = canSwipeKeep,
+            enableStartToEnd = enableStartToEnd,
+            enableEndToStart = enableEndToStart
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeableEventRowContent(
+    event: Event,
+    filterMode: EventsFilterMode,
+    viewModel: EventsViewModel,
+    snackbarHostState: SnackbarHostState,
+    coroutineScope: CoroutineScope,
+    baseUrl: String?,
+    onEventClick: (Event) -> Unit,
+    isSaved: Boolean,
+    canSwipeMarkReviewed: Boolean,
+    canSwipeKeep: Boolean,
+    enableStartToEnd: Boolean,
+    enableEndToStart: Boolean
+) {
+    val dismissState = rememberSwipeToDismissBoxState()
+    val view = LocalView.current
+    var hapticPlayed by remember { mutableStateOf(false) }
+
+    LaunchedEffect(dismissState.progress) {
+        if (dismissState.progress >= 0.5f && !hapticPlayed && (enableStartToEnd || enableEndToStart)) {
+            hapticPlayed = true
+            view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+        }
+        if (dismissState.progress == 0f) {
+            hapticPlayed = false
+        }
+    }
+
+    LaunchedEffect(event.event_id, filterMode, isSaved) {
+        val canMark = canSwipeMarkReviewed
+        val canKeep = canSwipeKeep
+        snapshotFlow { dismissState.currentValue }
+            .distinctUntilChanged()
+            .collect { settled: SwipeToDismissBoxValue ->
+                when (settled) {
+                    SwipeToDismissBoxValue.Settled -> { }
+                    SwipeToDismissBoxValue.StartToEnd -> {
+                        if (canMark) {
+                            viewModel.swipeMarkReviewed(event) { result ->
+                                when (result) {
+                                    is SwipeMarkReviewedResult.SuccessWithUndo -> {
+                                        coroutineScope.launch {
+                                            val snackResult = snackbarHostState.showSnackbar(
+                                                message = "Marked reviewed",
+                                                actionLabel = "Undo",
+                                                duration = SnackbarDuration.Short
+                                            )
+                                            if (snackResult == SnackbarResult.ActionPerformed) {
+                                                viewModel.undoMarkReviewed(event) { undoResult ->
+                                                    undoResult.onFailure { e ->
+                                                        coroutineScope.launch {
+                                                            snackbarHostState.showSnackbar(
+                                                                e.message ?: "Undo failed"
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    is SwipeMarkReviewedResult.Failure -> {
+                                        coroutineScope.launch {
+                                            snackbarHostState.showSnackbar(result.message)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    SwipeToDismissBoxValue.EndToStart -> {
+                        if (canKeep) {
+                            viewModel.swipeKeepEvent(event) { result ->
+                                result.onSuccess {
+                                    coroutineScope.launch {
+                                        snackbarHostState.showSnackbar("Saved")
+                                    }
+                                }
+                                result.onFailure { e ->
+                                    coroutineScope.launch {
+                                        dismissState.reset()
+                                        snackbarHostState.showSnackbar(
+                                            e.message ?: "Failed to save"
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+    }
+
+    val item = eventToCardItem(event)
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = enableStartToEnd,
+        enableDismissFromEndToStart = enableEndToStart,
+        backgroundContent = {
+            EventSwipeBackground(
+                dismissDirection = dismissState.dismissDirection,
+                enableStartToEnd = enableStartToEnd,
+                enableEndToStart = enableEndToStart
+            )
+        },
+        content = {
+            EventCard(
+                item = item,
+                baseUrl = baseUrl,
+                onClick = { onEventClick(event) }
+            )
+        }
+    )
+}
+
+@Composable
+private fun EventSwipeBackground(
+    dismissDirection: SwipeToDismissBoxValue,
+    enableStartToEnd: Boolean,
+    enableEndToStart: Boolean
+) {
+    val markColor = MaterialTheme.colorScheme.primaryContainer
+    val keepColor = MaterialTheme.colorScheme.tertiaryContainer
+    when (dismissDirection) {
+        SwipeToDismissBoxValue.StartToEnd -> {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (enableStartToEnd) markColor else Color.Transparent),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                if (enableStartToEnd) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = "Mark reviewed",
+                        modifier = Modifier
+                            .padding(horizontal = 24.dp)
+                            .size(28.dp),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+        }
+        SwipeToDismissBoxValue.EndToStart -> {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (enableEndToStart) keepColor else Color.Transparent),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                if (enableEndToStart) {
+                    Icon(
+                        imageVector = Icons.Default.Bookmark,
+                        contentDescription = "Save",
+                        modifier = Modifier
+                            .padding(horizontal = 24.dp)
+                            .size(28.dp),
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                }
+            }
+        }
+        SwipeToDismissBoxValue.Settled -> {
+            Box(modifier = Modifier.fillMaxSize())
+        }
     }
 }
 
