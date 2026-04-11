@@ -75,13 +75,13 @@ Package base: `com.example.frigateeventviewer`.
 ```
 app/src/main/java/com/example/frigateeventviewer/
 ├── FrigateEventViewerApplication.kt   # Application: Coil ImageLoaderFactory (StreamingVideoFetcher); go2RtcStreamsRepository (shared go2rtc cache); "Security Alerts" notification channel
-├── MainActivity.kt                    # Single Activity; Compose; on load triggers go2RtcStreamsRepository.refresh(); NavHost (settings, main_tabs, event_not_found, event_detail, snooze); handles deep link buffer://event_detail/{ce_id} via DeepLinkViewModel and EventMatching.findEventByCeId
+├── MainActivity.kt                    # Single Activity; Compose; on load triggers go2RtcStreamsRepository.refresh(); NavHost (settings, main_tabs, event_not_found, event_detail, snooze); handles deep link buffer://event_detail/{ce_id} via DeepLinkViewModel and EventMatching.findEventByCeId; activity-scoped ViewModels: Events, Live, DailyReview (SavedStateHandle for filter/camera/selected report date)
 ├── data/
 │   ├── Go2RtcStreamsRepository.kt    # Shared cache: go2rtc stream names (Go2RtcStreamsState); refresh() on app load and when Frigate IP saved; used by Settings and Live
 │   ├── api/
 │   │   ├── ApiClient.kt               # Retrofit/OkHttp factory; createService(baseUrl)
-│   │   └── FrigateApiService.kt       # Retrofit: getEvents, getCameras, getStats, getStatus, getCurrentDailyReview, generateDailyReview, markViewed, keepEvent, deleteEvent, registerDevice, getSnoozeList, setSnooze, clearSnooze, getUnreadCount, getGo2RtcStreams
-│   ├── model/                         # DTOs for API responses (Event, EventsResponse, StatsResponse, CamerasResponse, SnoozeRequest, SnoozeResponse, SnoozeEntry, UnreadCountResponse, DailyReviewResponse, etc.)
+│   │   └── FrigateApiService.kt       # Retrofit: getEvents, getCameras, getStats, getStatus, getCurrentDailyReview, getDailyReviewDates, getDailyReviewByDate, generateDailyReview (optional date query), markViewed, keepEvent, deleteEvent, registerDevice, getSnoozeList, setSnooze, clearSnooze, getUnreadCount, getGo2RtcStreams
+│   ├── model/                         # DTOs for API responses (Event, EventsResponse, StatsResponse, CamerasResponse, SnoozeRequest, SnoozeResponse, SnoozeEntry, UnreadCountResponse, DailyReviewResponse, DailyReviewDatesResponse, etc.)
 │   ├── preferences/
 │   │   └── SettingsPreferences.kt     # DataStore: baseUrl, frigateIp, buildFrigateApiBaseUrl (5000); defaultLiveCamera
 │   ├── push/
@@ -98,7 +98,7 @@ app/src/main/java/com/example/frigateeventviewer/
 └── ui/
     ├── screens/                       # One screen = one *Screen.kt + one *ViewModel.kt (and optional *ViewModelFactory)
     │   ├── DashboardScreen.kt         # Dashboard UI + DashboardViewModel/Factory; 5m refresh throttle
-    │   ├── DailyReviewScreen.kt       # Daily review Markdown UI + DailyReviewViewModel/Factory; 5m refresh throttle
+    │   ├── DailyReviewScreen.kt       # Daily review: date dropdown (GET /api/daily-review/dates + by-day report), defaults to today or most recent report; Markdown + in-progress badge for today; empty/generate; DailyReviewViewModel activity-scoped (SavedStateHandle selected date); 5m refresh throttle
     │   ├── DeepLinkViewModel.kt       # Pending deep-link ce_id and resolve trigger; used by MainActivity for buffer://event_detail/{ce_id}
     │   ├── EventDetailScreen.kt       # Event detail: video (Media3) or snapshot placeholder when no clip; actions, metadata + EventDetailViewModel/Factory
     │   ├── EventNotFoundScreen.kt     # Shown when deep link cannot resolve to an event; Refresh retries resolution
@@ -139,7 +139,7 @@ app/src/main/java/com/example/frigateeventviewer/
    - ViewModels get base URL from `SettingsPreferences.getBaseUrlOnce()` (or collect `baseUrl` flow).
    - They create the service with `ApiClient.createService(baseUrl)` and call `FrigateApiService` suspend functions.
    - **Live tab (go2rtc streams):** Uses **Frigate IP** from Settings, not the Event Buffer base URL. **Camera list:** Fetched once on app load (MainActivity calls `go2RtcStreamsRepository.refresh()`) and when Frigate IP is saved in Settings; Settings and Live tab read from `Go2RtcStreamsRepository.state` (no per-screen fetch). `SettingsPreferences.buildFrigateApiBaseUrl(frigateIp)` returns `http://<frigate_ip>:5000/`; repository uses that to call `getGo2RtcStreams()` (GET api/go2rtc/streams). **MP4 playback:** The app **exclusively uses the Frigate proxy (port 5000)**. Stream URL = `{base}api/go2rtc/api/stream.mp4?src={streamName}`. Player uses ExoPlayer with low-latency LoadControl and VIDEO_SCALING_MODE_SCALE_TO_FIT (original aspect ratio, no zoom); shows "Connecting..." / "Loading..." while buffering; error text below player shows exact reason (e.g. HTTP 404, connection refused).
-   - Daily Review uses the same base URL and API client for `api/daily-review/current` and `api/daily-review/generate`.
+   - Daily Review uses the same base URL and API client for `api/daily-review/current`, `api/daily-review/dates`, `api/daily-review/{date}`, and `api/daily-review/generate` (optional `date` query for a specific day).
    - No API calls from Composables; all from ViewModels.
 
 3. **Shared event selection**

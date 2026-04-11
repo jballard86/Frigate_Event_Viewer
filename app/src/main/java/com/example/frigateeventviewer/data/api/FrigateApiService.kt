@@ -8,6 +8,7 @@ import com.example.frigateeventviewer.data.model.SnoozeResponse
 import com.example.frigateeventviewer.data.model.StatsResponse
 import com.example.frigateeventviewer.data.model.StatusResponse
 import com.example.frigateeventviewer.data.model.UnreadCountResponse
+import com.example.frigateeventviewer.data.model.DailyReviewDatesResponse
 import com.example.frigateeventviewer.data.model.DailyReviewResponse
 import com.example.frigateeventviewer.data.model.GenerateReportResponse
 import com.example.frigateeventviewer.data.model.RegisterDeviceRequest
@@ -47,9 +48,18 @@ interface FrigateApiService {
     @GET("api/daily-review/current")
     suspend fun getCurrentDailyReview(): DailyReviewResponse
 
-    /** Trigger report generation (POST /api/daily-review/generate). Contract §4.4. */
+    /** Available report dates (GET /api/daily-review/dates). Contract §4.1. Newest first. */
+    @GET("api/daily-review/dates")
+    suspend fun getDailyReviewDates(): DailyReviewDatesResponse
+
+    /** Report for a calendar day (GET /api/daily-review/&lt;date_str&gt;). Contract §4.3. */
+    @GET("api/daily-review/{date_str}")
+    suspend fun getDailyReviewByDate(@Path("date_str") dateStr: String): DailyReviewResponse
+
+    /** Trigger report generation (POST /api/daily-review/generate). Contract §4.4. Optional [date] query (YYYY-MM-DD). */
     @POST("api/daily-review/generate")
     suspend fun generateDailyReview(
+        @Query("date") date: String? = null,
         @Body body: okhttp3.RequestBody = "{}".toRequestBody(
             "application/json".toMediaType(),
         ),

@@ -108,6 +108,10 @@ class MainActivity : ComponentActivity() {
                     viewModelStoreOwner = activity,
                     factory = LiveViewModelFactory()
                 )
+                val dailyReviewViewModel: DailyReviewViewModel = viewModel(
+                    viewModelStoreOwner = activity,
+                    factory = DailyReviewViewModelFactory(application)
+                )
                 val context = LocalContext.current
                 val resolveTrigger by deepLinkViewModel.resolveTrigger.collectAsState(initial = 0)
 
@@ -184,8 +188,6 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     composable("main_tabs") {
-                        val dailyReviewViewModel: DailyReviewViewModel =
-                            viewModel(factory = DailyReviewViewModelFactory(application))
                         MainTabsScreen(
                             navController = navController,
                             sharedEventViewModel = sharedEventViewModel,

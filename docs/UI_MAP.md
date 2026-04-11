@@ -44,6 +44,7 @@ When a screen needs **state that must survive configuration changes** (e.g. rota
 - **Events tab:** `EventsViewModel` is created in MainActivity with `viewModelStoreOwner = activity` and `EventsViewModelFactory(sharedEventViewModel)`; filter mode (Reviewed/Unreviewed/Saved) is stored in SavedStateHandle. Passed via MainTabsScreen into EventsScreen.
 - **Live tab:** `LiveViewModel` is created in MainActivity with `viewModelStoreOwner = activity` and `LiveViewModelFactory()`; selected camera is stored in SavedStateHandle. Passed via MainTabsScreen into LiveScreen.
 - **Main tabs:** `MainTabsViewModel` (selected tab index) follows the same pattern; it is activity-scoped so the selected tab survives rotation.
+- **Daily Review tab:** `DailyReviewViewModel` is created in MainActivity with `viewModel(viewModelStoreOwner = activity, factory = DailyReviewViewModelFactory(application))`; **selected report date** (YYYY-MM-DD) is stored in SavedStateHandle so it survives rotation.
 
 When adding a **new** screen that needs rotation-resistant state, follow this pattern: create the ViewModel in MainActivity, pass it through the navigation host into the screen, and document it in this UI Map (Screen inventory and this section).
 
@@ -216,11 +217,11 @@ graph TD
 ### DailyReviewScreen
 
 - **Route:** Hosted as page 3 inside `"main_tabs"` (MainTabsScreen pager)
-- **Purpose:** View the current daily review report (Markdown) and trigger report generation. Pull-to-refresh to refetch without regenerating. Renders markdown via mikepenz M3. A compact floating "Generate New Report" button (event-detail styling: 40.dp height, 12.dp shape, primaryContainer colors) calls the generate endpoint then refetches; it is visible only when the page is scrolled to the top (with a small buffer) and fades when the user scrolls down or long-presses anywhere on the screen; it fades back in when the user releases and is at top again. On 404 (no report for today) shows a friendly message and Retry. Data refreshes when the tab is selected and when the app is opened or brought from background.
-- **ViewModel:** `DailyReviewViewModel` (factory: `DailyReviewViewModelFactory`). Receives viewModel from MainTabsScreen (same instance for the pager).
-- **States:** `DailyReviewState` — `Idle` | `Loading` | `Success(markdownText)` | `Error(message)`.
-- **Data source:** `FrigateApiService.getCurrentDailyReview()`, `FrigateApiService.generateDailyReview()`.
-- **Refresh triggers:** init, pull-to-refresh (force=true), after Generate New Report, tab selected (force=false), app resume (force=false). Throttled by 5m staleness check.
+- **Purpose:** View daily review reports (Markdown) by **calendar day**. A full-width **dropdown** (same pattern as Events/Live: OutlinedTextField + DropdownMenu, 40.dp height, 12.dp shape) lists available report days from GET `/api/daily-review/dates`; labels use **Today**, **Yesterday**, or a short weekday date. On load, the app tries **today’s** report (`GET /api/daily-review/current`); if none yet (404), it shows the **most recent** available day (typically yesterday). While dates load, the dropdown shows a loading indicator. When viewing **today**, a subtle **Surface** badge reads “In progress — report updates as events occur”. If **no reports exist**, an empty state explains end-of-day generation and offers a prominent **Generate New Report** button. A compact floating **Generate New Report** (40.dp height, 12.dp shape, primaryContainer) generates for the **currently selected day** (`POST /api/daily-review/generate?date=…`), then refetches; visible only when content is **Success**, scrolled to top (small buffer), and not during a long-press fade. Pull-to-refresh refetches dates and the selected report. Data refreshes when the tab is selected and when the app resumes. **Retry** on errors refetches the current selection.
+- **ViewModel:** `DailyReviewViewModel` (factory: `DailyReviewViewModelFactory` using **CreationExtras** for SavedStateHandle). Created in **MainActivity** with `viewModel(viewModelStoreOwner = activity, factory = DailyReviewViewModelFactory(application))`, **activity-scoped**; **selected report date** is stored in SavedStateHandle. Passed via MainTabsScreen into DailyReviewScreen.
+- **States:** `DailyReviewState` — `Idle` | `Loading` | `Success(markdownText, selectedDateIso, isViewingToday)` | `Empty(message)` | `Error(message)`. Additional flows: `availableDates`, `datesLoading`, `selectedDateIso`.
+- **Data source:** `FrigateApiService.getDailyReviewDates()`, `getCurrentDailyReview()`, `getDailyReviewByDate(date)`, `generateDailyReview(date?)`.
+- **Refresh triggers:** init, pull-to-refresh (force=true), after Generate New Report, tab selected (force=false), app resume (force=false). Throttled by 5m staleness check when the same day is already showing successfully.
 
 ---
 
